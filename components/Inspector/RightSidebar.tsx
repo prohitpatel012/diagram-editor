@@ -19,6 +19,7 @@ import {
   CANVAS_BACKGROUNDS,
 } from '@/lib/constants';
 import { StorageStatus } from '@/lib/storage';
+import { ensureLinePoints } from '@/components/Canvas/CanvasElementRenderer';
 import {
   LuBringToFront,
   LuSendToBack,
@@ -429,22 +430,34 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             />
           </div>
 
-          {/* 6.5 Line & Arrow Routing Types (Straight, Orthogonal Elbow, Curved, Zigzag) */}
+          {/* 6.5 Line & Arrow Routing Types (Straight, Orthogonal Elbow, Curved, Stepped Multi-Node) */}
           {(primaryElement.type === 'line' || primaryElement.type === 'arrow') && (
             <div className="space-y-2 pt-2 border-t border-zinc-800">
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400 font-medium">Line Routing / Connector</span>
                 <span className="text-blue-400 text-[10px] font-mono capitalize">
-                  {primaryElement.lineRouting || 'straight'}
+                  {primaryElement.lineRouting === 'stepped'
+                    ? 'orthogonal multi-node'
+                    : primaryElement.lineRouting || 'straight'}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {LINE_ROUTING_OPTIONS.map((opt) => {
-                  const isCur = (primaryElement.lineRouting || 'straight') === opt.value;
+                  const isCur =
+                    (primaryElement.lineRouting || 'straight') === opt.value ||
+                    (primaryElement.lineRouting === 'zigzag' && opt.value === 'stepped');
                   return (
                     <button
                       key={opt.value}
-                      onClick={() => onUpdateElement({ lineRouting: opt.value })}
+                      onClick={() =>
+                        onUpdateElement({
+                          lineRouting: opt.value,
+                          ...(opt.value === 'stepped' &&
+                          (!primaryElement.points || primaryElement.points.length < 2)
+                            ? { points: ensureLinePoints(primaryElement) }
+                            : {}),
+                        })
+                      }
                       className={`p-2 rounded-lg border flex flex-col items-start gap-1 transition-all ${isCur
                         ? 'bg-blue-600/25 border-blue-500 text-white shadow-sm'
                         : 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
@@ -457,11 +470,15 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                           {opt.value === 'straight' && '―'}
                           {opt.value === 'orthogonal' && '┌─┘'}
                           {opt.value === 'curved' && '∿'}
-                          {opt.value === 'zigzag' && '⚡'}
+                          {opt.value === 'stepped' && '⮑'}
                         </span>
                       </div>
                       <span className="text-[9px] text-zinc-500 line-clamp-1">
-                        {opt.value === 'orthogonal' ? 'Connects 2+ components' : opt.description}
+                        {opt.value === 'orthogonal'
+                          ? '1-bend right angle'
+                          : opt.value === 'stepped'
+                          ? 'Eraser movable nodes'
+                          : opt.description}
                       </span>
                     </button>
                   );

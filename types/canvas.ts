@@ -23,8 +23,8 @@ export type ElementType =
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 export type FillStyle = 'solid' | 'semi' | 'transparent';
 export type ArrowHead = 'none' | 'arrow' | 'triangle' | 'circle';
-export type LineRouting = 'straight' | 'orthogonal' | 'curved' | 'zigzag';
-
+export type LineRouting = 'straight' | 'orthogonal' | 'curved' | 'stepped' | 'zigzag';
+  
 export type FigureType =
   | 'diamond'
   | 'cylinder'
@@ -122,4 +122,7 @@ export type ResizeHandle =
   | 'sw'
   | 'w'
   | 'start'
-  | 'end';
+  | 'end'
+  | `point-${number}`
+  | `mid-${number}`
+  | 'extend';

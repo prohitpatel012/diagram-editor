@@ -62,9 +62,12 @@ export const LineRoutingPopup: React.FC<LineRoutingPopupProps> = ({
                     <path d="M 4 6 C 14 6, 10 18, 20 18" />
                   </svg>
                 )}
-                {opt.value === 'zigzag' && (
+                {opt.value === 'stepped' && (
                   <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
-                    <path d="M 3 12 L 6 8 L 10 16 L 14 8 L 18 16 L 21 12" />
+                    <path d="M 4 6 L 11 6 Q 13 6 13 8 L 13 14 Q 13 16 15 16 L 20 16" />
+                    <circle cx="4" cy="6" r="1.5" fill="currentColor" />
+                    <circle cx="13" cy="11" r="1.5" fill="currentColor" />
+                    <circle cx="20" cy="16" r="1.5" fill="currentColor" />
                   </svg>
                 )}
               </div>

@@ -26,6 +26,7 @@ import { InfiniteCanvas } from '@/components/Canvas/InfiniteCanvas';
 import { IconPickerModal } from '@/components/Sidebar/IconPickerModal';
 import { FigurePickerPopup } from '@/components/Sidebar/FigurePickerPopup';
 import { LineRoutingPopup } from '@/components/Sidebar/LineRoutingPopup';
+import { ensureLinePoints } from '@/components/Canvas/CanvasElementRenderer';
 
 const STARTER_ELEMENTS: CanvasElement[] = [
   {
@@ -170,13 +171,19 @@ const STARTER_ELEMENTS: CanvasElement[] = [
     zIndex: 8,
   },
   {
-    id: 'starter_zigzag_line',
+    id: 'starter_stepped_line',
     type: 'arrow',
-    lineRouting: 'zigzag', // Alternating zigzag wave line
+    lineRouting: 'stepped', // Multi-Node Orthogonal Connector (Eraser.io style)
     x: 470,
     y: 380,
     width: 280,
     height: 80,
+    points: [
+      { x: 470, y: 380 },
+      { x: 580, y: 380 },
+      { x: 580, y: 460 },
+      { x: 750, y: 460 },
+    ],
     strokeColor: '#f59e0b',
     fillColor: 'transparent',
     strokeWidth: 2.5,
@@ -186,11 +193,11 @@ const STARTER_ELEMENTS: CanvasElement[] = [
     zIndex: 9,
   },
   {
-    id: 'starter_zigzag_label',
+    id: 'starter_stepped_label',
     type: 'text',
     x: 760,
-    y: 440,
-    width: 180,
+    y: 445,
+    width: 230,
     height: 30,
     strokeColor: '#f59e0b',
     fillColor: 'transparent',
@@ -198,7 +205,7 @@ const STARTER_ELEMENTS: CanvasElement[] = [
     strokeStyle: 'solid',
     fillStyle: 'transparent',
     opacity: 100,
-    text: '⚡ Zigzag Wave Connector',
+    text: '⮑ Multi-Node Orthogonal (Eraser)',
     fontSize: 14,
     fontFamily: 'Inter, sans-serif',
     textAlign: 'left',
@@ -403,7 +410,15 @@ export default function WhiteboardPage() {
 
     const next = elements.map((el) => {
       if (selectedIds.includes(el.id)) {
-        return { ...el, ...updates };
+        let updated = { ...el, ...updates };
+        if (
+          updates.lineRouting === 'stepped' &&
+          (el.type === 'line' || el.type === 'arrow') &&
+          (!updated.points || updated.points.length < 2)
+        ) {
+          updated.points = ensureLinePoints(updated);
+        }
+        return updated;
       }
       return el;
     });

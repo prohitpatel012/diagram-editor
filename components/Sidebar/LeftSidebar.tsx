@@ -56,7 +56,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const getLineRoutingBadge = () => {
     if (activeLineRouting === 'orthogonal') return '┌─┘';
     if (activeLineRouting === 'curved') return '∿';
-    if (activeLineRouting === 'zigzag') return '⚡';
+    if (activeLineRouting === 'stepped' || (activeLineRouting as string) === 'zigzag') return '⮑';
     return null;
   };
 
@@ -209,10 +209,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           {activeLineRouting === 'straight' && '―'}
           {activeLineRouting === 'orthogonal' && '┌─┘'}
           {activeLineRouting === 'curved' && '∿'}
-          {activeLineRouting === 'zigzag' && '⚡'}
+          {(activeLineRouting === 'stepped' || (activeLineRouting as string) === 'zigzag') && '⮑'}
         </span>
         <span className="absolute left-full ml-3 px-2 py-1 bg-zinc-900 border border-zinc-700/80 text-white text-xs rounded shadow-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50">
-          Line Type: {activeLineRouting}
+          Line Type: {activeLineRouting === 'stepped' ? 'multi-node orthogonal' : activeLineRouting}
         </span>
       </button>
 

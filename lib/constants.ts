@@ -1,4 +1,4 @@
-import { CanvasSettings, StrokeStyle, FillStyle, FigureType } from '@/types/canvas';
+import { CanvasSettings, StrokeStyle, FillStyle, FigureType, LineRouting } from '@/types/canvas';
 
 export const DEFAULT_STROKE_COLORS = [
   '#ffffff', // Pure white
@@ -61,11 +61,11 @@ export const STROKE_STYLES: { label: string; value: StrokeStyle }[] = [
   { label: 'Dotted', value: 'dotted' },
 ];
 
-export const LINE_ROUTING_OPTIONS: { label: string; value: 'straight' | 'orthogonal' | 'curved' | 'zigzag'; description: string }[] = [
+export const LINE_ROUTING_OPTIONS: { label: string; value: LineRouting; description: string }[] = [
   { label: 'Straight', value: 'straight', description: 'Direct straight line' },
-  { label: 'Orthogonal (Elbow)', value: 'orthogonal', description: 'Right-angle connector to connect components' },
+  { label: 'Orthogonal (Elbow)', value: 'orthogonal', description: 'Simple 1-bend right-angle connector' },
   { label: 'Curved (Smooth)', value: 'curved', description: 'Smooth Bézier curve connector' },
-  { label: 'Zigzag Wave', value: 'zigzag', description: 'Zigzag alternating wave line' },
+  { label: 'Orthogonal (Multi-Node)', value: 'stepped', description: 'Adjustable orthogonal connector with movable nodes (Eraser.io style)' },
 ];
 
 export const FILL_STYLES: { label: string; value: FillStyle }[] = [

@@ -9,7 +9,12 @@ import {
   FigureType,
   LineRouting,
 } from '@/types/canvas';
-import { CanvasElementRenderer } from './CanvasElementRenderer';
+import {
+  CanvasElementRenderer,
+  distToSegment,
+  ensureLinePoints,
+  getOrthogonalVertices,
+} from './CanvasElementRenderer';
 import { TransformHandles } from './TransformHandles';
 import { TextEditorOverlay } from './TextEditorOverlay';
 import { FloatingTextToolbar } from './FloatingTextToolbar';
@@ -66,7 +71,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   const [initialElementPositions, setInitialElementPositions] = useState<{ id: string; x: number; y: number }[]>([]);
 
   // Resizing Element
-  const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | null>(null);
+  const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | string | null>(null);
   const [initialResizeElement, setInitialResizeElement] = useState<CanvasElement | null>(null);
 
   // New Element Creation (Drawing)
@@ -303,7 +308,17 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
         fillStyle: defaultFillColor === 'transparent' ? 'transparent' : 'semi',
         opacity: 100,
         cornerRadius: currentTool === 'rectangle' ? 8 : 0,
-        points: currentTool === 'draw' ? [{ x: snappedX, y: snappedY }] : undefined,
+        points:
+          currentTool === 'draw'
+            ? [{ x: snappedX, y: snappedY }]
+            : ['line', 'arrow'].includes(currentTool) && activeLineRouting === 'stepped'
+            ? [
+                { x: snappedX, y: snappedY },
+                { x: snappedX, y: snappedY },
+                { x: snappedX, y: snappedY },
+                { x: snappedX, y: snappedY },
+              ]
+            : undefined,
         lineRouting: ['line', 'arrow'].includes(currentTool) ? activeLineRouting : undefined,
         figureType: currentTool === 'figure' ? activeFigureType : undefined,
         zIndex: elements.length + 1,
@@ -316,15 +331,27 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
     if (currentTool === 'select') {
       const clickedEl = [...elements].reverse().find((el) => {
         if (el.type === 'line' || el.type === 'arrow') {
-          const x1 = el.x;
-          const y1 = el.y;
-          const x2 = el.x + el.width;
-          const y2 = el.y + el.height;
-          const minX = Math.min(x1, x2) - 12;
-          const maxX = Math.max(x1, x2) + 12;
-          const minY = Math.min(y1, y2) - 12;
-          const maxY = Math.max(y1, y2) + 12;
-          return world.x >= minX && world.x <= maxX && world.y >= minY && world.y <= maxY;
+          const pts =
+            el.points && el.points.length >= 2
+              ? el.points
+              : [
+                  { x: el.x, y: el.y },
+                  { x: el.x + el.width, y: el.y + el.height },
+                ];
+
+          const isOrthogonal =
+            el.lineRouting === 'stepped' ||
+            el.lineRouting === 'zigzag' ||
+            el.lineRouting === 'orthogonal';
+
+          const vertices = isOrthogonal && pts.length >= 2 ? getOrthogonalVertices(pts) : pts;
+
+          for (let i = 0; i < vertices.length - 1; i++) {
+            if (distToSegment(world, vertices[i], vertices[i + 1]) <= 14) {
+              return true;
+            }
+          }
+          return false;
         }
 
         if (el.type === 'draw' && el.points) {
@@ -371,15 +398,104 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   };
 
   // Resize handle mouse down
-  const handleResizeHandleMouseDown = (e: React.MouseEvent, handle: ResizeHandle) => {
+  const handleResizeHandleMouseDown = (e: React.MouseEvent, handle: ResizeHandle | string) => {
     e.stopPropagation();
     if (selectedIds.length !== 1) return;
     const target = elements.find((el) => el.id === selectedIds[0]);
     if (!target) return;
 
+    const world = screenToWorld(e.clientX, e.clientY);
+
+    // 1. Segment midpoint '+' handle: insert a new waypoint and drag it
+    if (typeof handle === 'string' && handle.startsWith('mid-')) {
+      const midIdx = parseInt(handle.replace('mid-', ''), 10);
+      const currentPts = ensureLinePoints(target);
+      if (midIdx >= 0 && midIdx < currentPts.length - 1) {
+        const p1 = currentPts[midIdx];
+        const p2 = currentPts[midIdx + 1];
+        const newMidPt = {
+          x: snapValue((p1.x + p2.x) / 2),
+          y: snapValue((p1.y + p2.y) / 2),
+        };
+        const nextPts = [
+          ...currentPts.slice(0, midIdx + 1),
+          newMidPt,
+          ...currentPts.slice(midIdx + 1),
+        ];
+
+        const updatedEl: CanvasElement = {
+          ...target,
+          points: nextPts,
+        };
+
+        const nextElements = elements.map((el) => (el.id === target.id ? updatedEl : el));
+        onElementsChange(nextElements);
+
+        setActiveResizeHandle(`point-${midIdx + 1}`);
+        setInitialResizeElement({ ...updatedEl });
+        setDragStartPoint(world);
+        return;
+      }
+    }
+
+    // 2. Extend handle beside last node: append a new step and drag it
+    if (handle === 'extend') {
+      const currentPts = ensureLinePoints(target);
+      const lastIdx = currentPts.length - 1;
+      const lastPt = currentPts[lastIdx];
+      const prevPt = currentPts.length >= 2 ? currentPts[lastIdx - 1] : { x: lastPt.x - 30, y: lastPt.y };
+      const dirX = lastPt.x - prevPt.x;
+      const dirY = lastPt.y - prevPt.y;
+      const dist = Math.hypot(dirX, dirY) || 1;
+      const stepDist = 60;
+      const newPt = {
+        x: snapValue(lastPt.x + (dirX / dist) * stepDist),
+        y: snapValue(lastPt.y + (dirY / dist) * stepDist),
+      };
+
+      const nextPts = [...currentPts, newPt];
+      const updatedEl: CanvasElement = {
+        ...target,
+        points: nextPts,
+        width: newPt.x - nextPts[0].x,
+        height: newPt.y - nextPts[0].y,
+      };
+
+      const nextElements = elements.map((el) => (el.id === target.id ? updatedEl : el));
+      onElementsChange(nextElements);
+
+      setActiveResizeHandle(`point-${nextPts.length - 1}`);
+      setInitialResizeElement({ ...updatedEl });
+      setDragStartPoint(world);
+      return;
+    }
+
     setActiveResizeHandle(handle);
     setInitialResizeElement({ ...target });
-    setDragStartPoint(screenToWorld(e.clientX, e.clientY));
+    setDragStartPoint(world);
+  };
+
+  // Delete intermediate waypoint on double click
+  const handleDeletePoint = (pointIndex: number) => {
+    if (selectedIds.length !== 1) return;
+    const target = elements.find((el) => el.id === selectedIds[0]);
+    if (!target || !target.points || target.points.length <= 2) return;
+    if (pointIndex <= 0 || pointIndex >= target.points.length - 1) return;
+
+    const nextPts = target.points.filter((_, idx) => idx !== pointIndex);
+    const p0 = nextPts[0];
+    const pLast = nextPts[nextPts.length - 1];
+    const updatedEl: CanvasElement = {
+      ...target,
+      x: p0.x,
+      y: p0.y,
+      width: pLast.x - p0.x,
+      height: pLast.y - p0.y,
+      points: nextPts,
+    };
+    const nextElements = elements.map((el) => (el.id === target.id ? updatedEl : el));
+    onElementsChange(nextElements);
+    onCommitHistory(nextElements);
   };
 
   // Mouse Move: Pan, Draw, Drag, Resize, Marquee
@@ -407,12 +523,87 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
       let nextH = init.height;
 
       if (init.type === 'arrow' || init.type === 'line') {
+        // Handle dragging a specific waypoint ('point-0', 'point-1', etc.)
+        if (typeof activeResizeHandle === 'string' && activeResizeHandle.startsWith('point-')) {
+          const ptIdx = parseInt(activeResizeHandle.replace('point-', ''), 10);
+          const initPts = ensureLinePoints(init);
+          if (ptIdx >= 0 && ptIdx < initPts.length) {
+            const origPt = initPts[ptIdx];
+            const newPt = {
+              x: snapValue(origPt.x + dx),
+              y: snapValue(origPt.y + dy),
+            };
+
+            const nextPts = initPts.map((p, idx) => (idx === ptIdx ? newPt : { ...p }));
+            const p0 = nextPts[0];
+            const pLast = nextPts[nextPts.length - 1];
+
+            const updated = elements.map((el) =>
+              el.id === init.id
+                ? {
+                    ...el,
+                    x: p0.x,
+                    y: p0.y,
+                    width: pLast.x - p0.x,
+                    height: pLast.y - p0.y,
+                    points: nextPts,
+                  }
+                : el
+            );
+            onElementsChange(updated);
+            return;
+          }
+        }
+
         if (activeResizeHandle === 'start') {
+          if (init.points && init.points.length >= 2) {
+            const nextPts = init.points.map((p, idx) =>
+              idx === 0 ? { x: snapValue(p.x + dx), y: snapValue(p.y + dy) } : p
+            );
+            const p0 = nextPts[0];
+            const pLast = nextPts[nextPts.length - 1];
+            const updated = elements.map((el) =>
+              el.id === init.id
+                ? {
+                    ...el,
+                    x: p0.x,
+                    y: p0.y,
+                    width: pLast.x - p0.x,
+                    height: pLast.y - p0.y,
+                    points: nextPts,
+                  }
+                : el
+            );
+            onElementsChange(updated);
+            return;
+          }
           nextX = init.x + dx;
           nextY = init.y + dy;
           nextW = init.width - dx;
           nextH = init.height - dy;
         } else if (activeResizeHandle === 'end') {
+          if (init.points && init.points.length >= 2) {
+            const lastIdx = init.points.length - 1;
+            const nextPts = init.points.map((p, idx) =>
+              idx === lastIdx ? { x: snapValue(p.x + dx), y: snapValue(p.y + dy) } : p
+            );
+            const p0 = nextPts[0];
+            const pLast = nextPts[lastIdx];
+            const updated = elements.map((el) =>
+              el.id === init.id
+                ? {
+                    ...el,
+                    x: p0.x,
+                    y: p0.y,
+                    width: pLast.x - p0.x,
+                    height: pLast.y - p0.y,
+                    points: nextPts,
+                  }
+                : el
+            );
+            onElementsChange(updated);
+            return;
+          }
           nextW = init.width + dx;
           nextH = init.height + dy;
         }
@@ -502,6 +693,45 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
       } else {
         const startX = drawingElement.x;
         const startY = drawingElement.y;
+
+        // Multi-node stepped orthogonal connector drawing
+        if (
+          (drawingElement.type === 'line' || drawingElement.type === 'arrow') &&
+          (drawingElement.lineRouting === 'stepped' || drawingElement.lineRouting === 'zigzag')
+        ) {
+          const endX = snapValue(world.x);
+          const endY = snapValue(world.y);
+          const dx = endX - startX;
+          const dy = endY - startY;
+
+          let pts: Point[];
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            const mx = snapValue(startX + dx * 0.5);
+            pts = [
+              { x: startX, y: startY },
+              { x: mx, y: startY },
+              { x: mx, y: endY },
+              { x: endX, y: endY },
+            ];
+          } else {
+            const my = snapValue(startY + dy * 0.5);
+            pts = [
+              { x: startX, y: startY },
+              { x: startX, y: my },
+              { x: endX, y: my },
+              { x: endX, y: endY },
+            ];
+          }
+
+          setDrawingElement({
+            ...drawingElement,
+            width: snapValue(dx),
+            height: snapValue(dy),
+            points: pts,
+          });
+          return;
+        }
+
         let w = world.x - startX;
         let h = world.y - startY;
 
@@ -589,7 +819,8 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
 
         if (
           Math.abs(finalElement.width) >= 5 ||
-          Math.abs(finalElement.height) >= 5
+          Math.abs(finalElement.height) >= 5 ||
+          (finalElement.points && finalElement.points.length >= 2)
         ) {
           const next = [...elements, finalElement];
           onElementsChange(next);
@@ -801,6 +1032,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
                   element={el}
                   viewTransform={viewTransform}
                   onHandleMouseDown={handleResizeHandleMouseDown}
+                  onDeletePoint={handleDeletePoint}
                 />
               ) : null;
             })()

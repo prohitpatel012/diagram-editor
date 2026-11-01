@@ -25,7 +25,144 @@ export function getSvgPathFromPoints(points?: Point[]): string {
   return d;
 }
 
-// Generate path for lines and arrows (Straight, Orthogonal Elbow, Curved Bézier, Zigzag Wave)
+// Distance from point to line segment
+export function distToSegment(p: Point, v: Point, w: Point): number {
+  const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
+  if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+  let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const projX = v.x + t * (w.x - v.x);
+  const projY = v.y + t * (w.y - v.y);
+  return Math.hypot(p.x - projX, p.y - projY);
+}
+
+// Ensure line/arrow has an array of points (start, intermediate bends, end)
+export function ensureLinePoints(element: CanvasElement): Point[] {
+  if (element.points && element.points.length >= 2) {
+    return element.points;
+  }
+  const x1 = element.x;
+  const y1 = element.y;
+  const x2 = element.x + element.width;
+  const y2 = element.y + element.height;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const mx = x1 + dx * 0.5;
+    return [
+      { x: x1, y: y1 },
+      { x: mx, y: y1 },
+      { x: mx, y: y2 },
+      { x: x2, y: y2 },
+    ];
+  } else {
+    const my = y1 + dy * 0.5;
+    return [
+      { x: x1, y: y1 },
+      { x: x1, y: my },
+      { x: x2, y: my },
+      { x: x2, y: y2 },
+    ];
+  }
+}
+
+// Convert any sequence of waypoints into right-angled orthogonal segments
+export function getOrthogonalVertices(rawPoints: Point[]): Point[] {
+  if (rawPoints.length <= 1) return rawPoints;
+  const vertices: Point[] = [{ x: rawPoints[0].x, y: rawPoints[0].y }];
+
+  for (let i = 0; i < rawPoints.length - 1; i++) {
+    const cur = vertices[vertices.length - 1];
+    const next = rawPoints[i + 1];
+    const dx = next.x - cur.x;
+    const dy = next.y - cur.y;
+
+    if (Math.abs(dx) < 1e-3 || Math.abs(dy) < 1e-3) {
+      // Already orthogonal (pure horizontal or vertical)
+      vertices.push({ x: next.x, y: next.y });
+    } else {
+      // Non-orthogonal step: choose orientation based on incoming direction
+      const prev = vertices.length >= 2 ? vertices[vertices.length - 2] : null;
+      let horizontalFirst = true;
+
+      if (prev) {
+        const prevDx = Math.abs(cur.x - prev.x);
+        const prevDy = Math.abs(cur.y - prev.y);
+        // If arrived horizontally, step vertically first; otherwise step horizontally
+        horizontalFirst = prevDx < prevDy;
+      } else {
+        horizontalFirst = Math.abs(dx) >= Math.abs(dy);
+      }
+
+      if (horizontalFirst) {
+        vertices.push({ x: next.x, y: cur.y });
+      } else {
+        vertices.push({ x: cur.x, y: next.y });
+      }
+      vertices.push({ x: next.x, y: next.y });
+    }
+  }
+
+  // Deduplicate adjacent coincident vertices
+  const clean: Point[] = [];
+  for (const v of vertices) {
+    if (clean.length === 0) {
+      clean.push(v);
+    } else {
+      const last = clean[clean.length - 1];
+      if (Math.hypot(v.x - last.x, v.y - last.y) > 0.5) {
+        clean.push(v);
+      }
+    }
+  }
+  return clean;
+}
+
+// Render rounded right-angle orthogonal path from vertices (Eraser.io style)
+export function renderRoundedOrthogonalPath(vertices: Point[], cornerRadius = 10): string {
+  if (vertices.length === 0) return '';
+  if (vertices.length === 1) return `M ${vertices[0].x} ${vertices[0].y}`;
+  if (vertices.length === 2) {
+    return `M ${vertices[0].x.toFixed(1)} ${vertices[0].y.toFixed(1)} L ${vertices[1].x.toFixed(1)} ${vertices[1].y.toFixed(1)}`;
+  }
+
+  let d = `M ${vertices[0].x.toFixed(1)} ${vertices[0].y.toFixed(1)}`;
+
+  for (let i = 1; i < vertices.length - 1; i++) {
+    const pPrev = vertices[i - 1];
+    const pCur = vertices[i];
+    const pNext = vertices[i + 1];
+
+    const d1x = pCur.x - pPrev.x;
+    const d1y = pCur.y - pPrev.y;
+    const len1 = Math.hypot(d1x, d1y);
+
+    const d2x = pNext.x - pCur.x;
+    const d2y = pNext.y - pCur.y;
+    const len2 = Math.hypot(d2x, d2y);
+
+    const r = Math.min(cornerRadius, len1 / 2, len2 / 2);
+
+    if (r > 1 && len1 > 0.1 && len2 > 0.1) {
+      const enterX = pCur.x - (d1x / len1) * r;
+      const enterY = pCur.y - (d1y / len1) * r;
+      const exitX = pCur.x + (d2x / len2) * r;
+      const exitY = pCur.y + (d2y / len2) * r;
+
+      d += ` L ${enterX.toFixed(1)} ${enterY.toFixed(1)}`;
+      d += ` Q ${pCur.x.toFixed(1)} ${pCur.y.toFixed(1)}, ${exitX.toFixed(1)} ${exitY.toFixed(1)}`;
+    } else {
+      d += ` L ${pCur.x.toFixed(1)} ${pCur.y.toFixed(1)}`;
+    }
+  }
+
+  const last = vertices[vertices.length - 1];
+  d += ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
+  return d;
+}
+
+// Generate path for lines and arrows (Straight, Orthogonal Elbow, Curved Bézier, Multi-Node Stepped)
 export function getLinePath(element: CanvasElement): string {
   const x1 = element.x;
   const y1 = element.y;
@@ -36,8 +173,20 @@ export function getLinePath(element: CanvasElement): string {
   const dx = x2 - x1;
   const dy = y2 - y1;
 
-  // 1. Orthogonal / Elbow Connector (Right-angle stepped connector with rounded corners)
+  // 1. Multi-Node Stepped Orthogonal Connector (Movable Nodes, Eraser.io style)
+  if (routing === 'stepped' || routing === 'zigzag') {
+    const pts = ensureLinePoints(element);
+    const vertices = getOrthogonalVertices(pts);
+    return renderRoundedOrthogonalPath(vertices, 10);
+  }
+
+  // 2. Simple Orthogonal / Elbow Connector (1-bend right-angle connector)
   if (routing === 'orthogonal') {
+    if (element.points && element.points.length > 2) {
+      const vertices = getOrthogonalVertices(element.points);
+      return renderRoundedOrthogonalPath(vertices, 10);
+    }
+
     const sx = dx >= 0 ? 1 : -1;
     const sy = dy >= 0 ? 1 : -1;
 
@@ -70,7 +219,7 @@ export function getLinePath(element: CanvasElement): string {
     }
   }
 
-  // 2. Smooth Curved Connector (S-curve Bézier)
+  // 3. Smooth Curved Connector (S-curve Bézier)
   if (routing === 'curved') {
     if (Math.abs(dx) > Math.abs(dy)) {
       return `M ${x1} ${y1} C ${x1 + dx * 0.5} ${y1}, ${x2 - dx * 0.5} ${y2}, ${x2} ${y2}`;
@@ -79,33 +228,14 @@ export function getLinePath(element: CanvasElement): string {
     }
   }
 
-  // 3. Zigzag Wave Line (Saw-tooth wave)
-  if (routing === 'zigzag') {
-    const dist = Math.hypot(dx, dy);
-    if (dist < 12) {
-      return `M ${x1} ${y1} L ${x2} ${y2}`;
+  // 4. Default: Straight Line
+  if (element.points && element.points.length >= 2) {
+    let d = `M ${element.points[0].x} ${element.points[0].y}`;
+    for (let i = 1; i < element.points.length; i++) {
+      d += ` L ${element.points[i].x} ${element.points[i].y}`;
     }
-
-    const nx = -dy / dist;
-    const ny = dx / dist;
-    const steps = Math.max(3, Math.round(dist / 14));
-    const amp = Math.min(10, dist / 8);
-
-    let d = `M ${x1} ${y1}`;
-    for (let i = 1; i < steps; i++) {
-      const t = i / steps;
-      const bx = x1 + t * dx;
-      const by = y1 + t * dy;
-      const sign = i % 2 === 1 ? 1 : -1;
-      const px = (bx + sign * amp * nx).toFixed(1);
-      const py = (by + sign * amp * ny).toFixed(1);
-      d += ` L ${px} ${py}`;
-    }
-    d += ` L ${x2} ${y2}`;
     return d;
   }
-
-  // 4. Default: Straight Line
   return `M ${x1} ${y1} L ${x2} ${y2}`;
 }
 
