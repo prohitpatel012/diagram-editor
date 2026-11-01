@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Tool,
   CanvasElement,
@@ -18,6 +18,7 @@ import {
 import { TransformHandles } from './TransformHandles';
 import { TextEditorOverlay } from './TextEditorOverlay';
 import { FloatingTextToolbar } from './FloatingTextToolbar';
+import { LuArrowRight, LuChevronRight, LuMoveHorizontal } from 'react-icons/lu';
 
 interface InfiniteCanvasProps {
   currentTool: Tool;
@@ -104,6 +105,208 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
     },
     [canvasSettings.snapToGrid, canvasSettings.gridSize]
   );
+
+  // Canvas Container Dimensions & Resize Tracking
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({
+    width: 1200,
+    height: 800,
+  });
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setContainerSize({ width: rect.width, height: rect.height });
+        }
+      }
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // Compute Total World Content Bounds
+  const contentBounds = useMemo(() => {
+    if (elements.length === 0) {
+      return { minX: 0, maxX: 1200, minY: 0, maxY: 800 };
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const el of elements) {
+      if (el.points && el.points.length > 0) {
+        for (const pt of el.points) {
+          minX = Math.min(minX, pt.x);
+          maxX = Math.max(maxX, pt.x);
+          minY = Math.min(minY, pt.y);
+          maxY = Math.max(maxY, pt.y);
+        }
+      }
+      const left = Math.min(el.x, el.x + (el.width || 0));
+      const right = Math.max(el.x, el.x + (el.width || 0));
+      const top = Math.min(el.y, el.y + (el.height || 0));
+      const bottom = Math.max(el.y, el.y + (el.height || 0));
+      minX = Math.min(minX, left);
+      maxX = Math.max(maxX, right);
+      minY = Math.min(minY, top);
+      maxY = Math.max(maxY, bottom);
+    }
+
+    return {
+      minX: Number.isFinite(minX) ? minX : 0,
+      maxX: Number.isFinite(maxX) ? maxX : 1200,
+      minY: Number.isFinite(minY) ? minY : 0,
+      maxY: Number.isFinite(maxY) ? maxY : 800,
+    };
+  }, [elements]);
+
+  // Viewport World Coordinates & Generous Virtual Canvas Expansion
+  const scale = Math.max(0.01, viewTransform.scale);
+  const visibleLeft = -viewTransform.x / scale;
+  const visibleRight = (containerSize.width - viewTransform.x) / scale;
+  const visibleTop = -viewTransform.y / scale;
+  const visibleBottom = (containerSize.height - viewTransform.y) / scale;
+  const visibleWidth = containerSize.width / scale;
+  const visibleHeight = containerSize.height / scale;
+
+  // Virtual Canvas Bounds: Dynamically expands as user moves right or draws to the right
+  const scrollMinX = Math.min(-1000, contentBounds.minX - 600, visibleLeft - 200);
+  const scrollMaxX = Math.max(4000, contentBounds.maxX + 2500, visibleRight + 1200);
+  const scrollMinY = Math.min(-600, contentBounds.minY - 500, visibleTop - 200);
+  const scrollMaxY = Math.max(3000, contentBounds.maxY + 1800, visibleBottom + 800);
+
+  const totalSpanX = Math.max(1, scrollMaxX - scrollMinX);
+  const totalSpanY = Math.max(1, scrollMaxY - scrollMinY);
+
+  // Scrollbar Thumb Percentages
+  const hThumbWidthPct = Math.max(6, Math.min(100, (visibleWidth / totalSpanX) * 100));
+  const maxScrollableX = Math.max(1, totalSpanX - visibleWidth);
+  const hOffsetProgress = Math.max(0, Math.min(1, (visibleLeft - scrollMinX) / maxScrollableX));
+  const hThumbLeftPct = hOffsetProgress * (100 - hThumbWidthPct);
+
+  const vThumbHeightPct = Math.max(6, Math.min(100, (visibleHeight / totalSpanY) * 100));
+  const maxScrollableY = Math.max(1, totalSpanY - visibleHeight);
+  const vOffsetProgress = Math.max(0, Math.min(1, (visibleTop - scrollMinY) / maxScrollableY));
+  const vThumbTopPct = vOffsetProgress * (100 - vThumbHeightPct);
+
+  // Scrollbar Track Refs
+  const hTrackRef = useRef<HTMLDivElement>(null);
+  const vTrackRef = useRef<HTMLDivElement>(null);
+  const isDraggingHThumb = useRef(false);
+  const isDraggingVThumb = useRef(false);
+  const dragStartCoord = useRef(0);
+  const dragStartViewOffset = useRef(0);
+
+  // Horizontal Scrollbar Handlers
+  const handleHThumbMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    isDraggingHThumb.current = true;
+    dragStartCoord.current = e.clientX;
+    dragStartViewOffset.current = viewTransform.x;
+
+    const handlePointerMove = (ev: MouseEvent) => {
+      if (!isDraggingHThumb.current || !hTrackRef.current) return;
+      const trackRect = hTrackRef.current.getBoundingClientRect();
+      const usableTrackPx = trackRect.width * (1 - hThumbWidthPct / 100);
+      if (usableTrackPx <= 0) return;
+
+      const deltaPixel = ev.clientX - dragStartCoord.current;
+      const fractionDelta = deltaPixel / usableTrackPx;
+      const deltaWorld = fractionDelta * maxScrollableX;
+      const newViewX = dragStartViewOffset.current - deltaWorld * scale;
+      onViewTransformChange({
+        ...viewTransform,
+        x: newViewX,
+      });
+    };
+
+    const handlePointerUp = () => {
+      isDraggingHThumb.current = false;
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+  };
+
+  const handleHTrackClick = (e: React.MouseEvent) => {
+    if (!hTrackRef.current) return;
+    const rect = hTrackRef.current.getBoundingClientRect();
+    const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const targetWorldX = scrollMinX + clickRatio * totalSpanX - visibleWidth / 2;
+    onViewTransformChange({
+      ...viewTransform,
+      x: -targetWorldX * scale,
+    });
+  };
+
+  // Vertical Scrollbar Handlers
+  const handleVThumbMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    isDraggingVThumb.current = true;
+    dragStartCoord.current = e.clientY;
+    dragStartViewOffset.current = viewTransform.y;
+
+    const handlePointerMove = (ev: MouseEvent) => {
+      if (!isDraggingVThumb.current || !vTrackRef.current) return;
+      const trackRect = vTrackRef.current.getBoundingClientRect();
+      const usableTrackPx = trackRect.height * (1 - vThumbHeightPct / 100);
+      if (usableTrackPx <= 0) return;
+
+      const deltaPixel = ev.clientY - dragStartCoord.current;
+      const fractionDelta = deltaPixel / usableTrackPx;
+      const deltaWorld = fractionDelta * maxScrollableY;
+      const newViewY = dragStartViewOffset.current - deltaWorld * scale;
+      onViewTransformChange({
+        ...viewTransform,
+        y: newViewY,
+      });
+    };
+
+    const handlePointerUp = () => {
+      isDraggingVThumb.current = false;
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+  };
+
+  const handleVTrackClick = (e: React.MouseEvent) => {
+    if (!vTrackRef.current) return;
+    const rect = vTrackRef.current.getBoundingClientRect();
+    const clickRatio = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const targetWorldY = scrollMinY + clickRatio * totalSpanY - visibleHeight / 2;
+    onViewTransformChange({
+      ...viewTransform,
+      y: -targetWorldY * scale,
+    });
+  };
+
+  // Quick Action: Expand Canvas to the Right (+800px)
+  const handleExpandCanvasRight = () => {
+    onViewTransformChange({
+      ...viewTransform,
+      x: viewTransform.x - 800 * scale,
+    });
+  };
+
+  // Quick Action: Scroll to rightmost content
+  const hasContentOnRight = contentBounds.maxX > visibleRight + 60;
+  const handleScrollToRightContent = () => {
+    const targetX = -(contentBounds.maxX - visibleWidth * 0.8) * scale;
+    onViewTransformChange({
+      ...viewTransform,
+      x: targetX,
+    });
+  };
 
   // Keyboard Shortcuts (Space for Pan, Escape, Delete, Arrows)
   useEffect(() => {
@@ -208,10 +411,17 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
           scale: newScale,
         });
       } else {
+        let dx = e.deltaX;
+        let dy = e.deltaY;
+        // Shift + Wheel scrolls horizontally
+        if (e.shiftKey && dx === 0 && dy !== 0) {
+          dx = dy;
+          dy = 0;
+        }
         onViewTransformChange({
           ...viewTransform,
-          x: viewTransform.x - e.deltaX,
-          y: viewTransform.y - e.deltaY,
+          x: viewTransform.x - dx,
+          y: viewTransform.y - dy,
         });
       }
     },
@@ -510,6 +720,41 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
     }
 
     const world = screenToWorld(e.clientX, e.clientY);
+
+    // Edge Auto-Panning: Automatically expand view when drawing, dragging, or resizing near edges
+    if (drawingElement || isDraggingElements || activeResizeHandle) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const edgeMargin = 45;
+        const distRight = rect.right - e.clientX;
+        const distBottom = rect.bottom - e.clientY;
+        const distLeft = e.clientX - rect.left;
+        const distTop = e.clientY - rect.top;
+
+        let panDx = 0;
+        let panDy = 0;
+
+        if (distRight < edgeMargin && distRight >= 0) {
+          panDx = -Math.round((edgeMargin - distRight) * 0.8 + 8);
+        } else if (distLeft < edgeMargin && distLeft >= 0) {
+          panDx = Math.round((edgeMargin - distLeft) * 0.8 + 8);
+        }
+
+        if (distBottom < edgeMargin && distBottom >= 0) {
+          panDy = -Math.round((edgeMargin - distBottom) * 0.8 + 8);
+        } else if (distTop < edgeMargin && distTop >= 0) {
+          panDy = Math.round((edgeMargin - distTop) * 0.8 + 8);
+        }
+
+        if (panDx !== 0 || panDy !== 0) {
+          onViewTransformChange({
+            ...viewTransform,
+            x: viewTransform.x + panDx,
+            y: viewTransform.y + panDy,
+          });
+        }
+      }
+    }
 
     // 2. Resizing an Element
     if (activeResizeHandle && initialResizeElement) {
@@ -1132,6 +1377,73 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
           }}
         />
       )}
+
+      {/* Floating Canvas Quick Action Bar (Expand Right & Content Indicator) */}
+      <div className="absolute bottom-6 right-80 z-30 flex items-center gap-2 pointer-events-auto select-none">
+        {hasContentOnRight && (
+          <button
+            type="button"
+            onClick={handleScrollToRightContent}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/95 hover:bg-blue-500 text-white rounded-lg text-xs font-medium shadow-lg backdrop-blur-md transition-all border border-blue-400/40 animate-pulse"
+            title="There are drawn elements further to the right. Click to pan directly to them."
+          >
+            <span>Content on right</span>
+            <LuChevronRight size={15} />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={handleExpandCanvasRight}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900/95 hover:bg-zinc-800 text-zinc-200 hover:text-white rounded-lg text-xs font-medium shadow-md border border-zinc-700/80 backdrop-blur-md transition-all hover:border-blue-500/50"
+          title="Expand canvas viewport to the right (+800px)"
+        >
+          <LuMoveHorizontal size={14} className="text-blue-400" />
+          <span>Expand Right</span>
+          <LuArrowRight size={13} className="text-zinc-400" />
+        </button>
+
+        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-900/90 rounded-lg text-[11px] text-zinc-400 border border-zinc-800 backdrop-blur-md">
+          <span>Width:</span>
+          <span className="font-mono text-zinc-200 font-semibold">{Math.round(totalSpanX)}px</span>
+        </div>
+      </div>
+
+      {/* Interactive Horizontal Scrollbar */}
+      <div
+        ref={hTrackRef}
+        onClick={handleHTrackClick}
+        className="absolute bottom-1.5 left-20 right-80 h-3 hover:h-4 bg-zinc-900/80 hover:bg-zinc-900/95 border border-zinc-800/80 rounded-full z-20 cursor-pointer transition-all duration-150 backdrop-blur-md group"
+        title="Horizontal scrollbar: drag thumb or click track to scroll canvas horizontally"
+      >
+        <div
+          onMouseDown={handleHThumbMouseDown}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: `${hThumbWidthPct}%`,
+            left: `${hThumbLeftPct}%`,
+          }}
+          className="absolute top-0.5 bottom-0.5 bg-zinc-500/80 group-hover:bg-blue-500 active:bg-blue-600 rounded-full cursor-grab active:cursor-grabbing transition-colors"
+        />
+      </div>
+
+      {/* Interactive Vertical Scrollbar */}
+      <div
+        ref={vTrackRef}
+        onClick={handleVTrackClick}
+        className="absolute top-20 bottom-10 right-76 w-3 hover:w-4 bg-zinc-900/80 hover:bg-zinc-900/95 border border-zinc-800/80 rounded-full z-20 cursor-pointer transition-all duration-150 backdrop-blur-md group"
+        title="Vertical scrollbar: drag thumb or click track to scroll canvas vertically"
+      >
+        <div
+          onMouseDown={handleVThumbMouseDown}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            height: `${vThumbHeightPct}%`,
+            top: `${vThumbTopPct}%`,
+          }}
+          className="absolute left-0.5 right-0.5 bg-zinc-500/80 group-hover:bg-blue-500 active:bg-blue-600 rounded-full cursor-grab active:cursor-grabbing transition-colors"
+        />
+      </div>
     </div>
   );
 };

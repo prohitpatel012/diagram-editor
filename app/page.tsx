@@ -27,6 +27,7 @@ import { IconPickerModal } from '@/components/Sidebar/IconPickerModal';
 import { FigurePickerPopup } from '@/components/Sidebar/FigurePickerPopup';
 import { LineRoutingPopup } from '@/components/Sidebar/LineRoutingPopup';
 import { ensureLinePoints } from '@/components/Canvas/CanvasElementRenderer';
+import { ERDiagramEditor } from '@/components/ERDiagram/ERDiagramEditor';
 
 const STARTER_ELEMENTS: CanvasElement[] = [
   {
@@ -232,6 +233,28 @@ const STARTER_ELEMENTS: CanvasElement[] = [
 ];
 
 export default function WhiteboardPage() {
+  const [appMode, setAppMode] = useState<'whiteboard' | 'er-diagram'>('er-diagram');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('app_active_mode');
+      if (saved === 'whiteboard' || saved === 'er-diagram') {
+        setAppMode(saved);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const handleSelectMode = (mode: 'whiteboard' | 'er-diagram') => {
+    setAppMode(mode);
+    try {
+      localStorage.setItem('app_active_mode', mode);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const [boardTitle, setBoardTitle] = useState('Untitled Diagram');
   const [currentTool, setCurrentTool] = useState<Tool>('select');
   const [elements, setElements] = useState<CanvasElement[]>([]);
@@ -578,86 +601,97 @@ export default function WhiteboardPage() {
         onResetZoom={() => setViewTransform((v) => ({ ...v, scale: 1 }))}
         onFitToContent={handleFitToContent}
         storageStatus={storageStatus}
+        activeMode={appMode}
+        onSelectMode={handleSelectMode}
       />
 
-      {/* Left Sidebar (Tools, File operations) */}
-      <LeftSidebar
-        currentTool={currentTool}
-        onSelectTool={setCurrentTool}
-        onOpenIconPicker={() => setIsIconPickerOpen(true)}
-        onOpenFigurePicker={() => setIsFigurePickerOpen((v) => !v)}
-        selectedFigureType={activeFigureType}
-        activeLineRouting={activeLineRouting}
-        onOpenLineRoutingPicker={() => setIsLineRoutingPickerOpen((v) => !v)}
-        onExportPng={handleExportPng}
-        onSaveToFile={handleSaveToFile}
-        onOpenLocalFile={handleOpenLocalFile}
-        onClearCanvas={() => setShowClearConfirm(true)}
-      />
+      {/* Main Mode View */}
+      {appMode === 'er-diagram' ? (
+        <div className="absolute inset-0 pt-13">
+          <ERDiagramEditor />
+        </div>
+      ) : (
+        <>
+          {/* Left Sidebar (Tools, File operations) */}
+          <LeftSidebar
+            currentTool={currentTool}
+            onSelectTool={setCurrentTool}
+            onOpenIconPicker={() => setIsIconPickerOpen(true)}
+            onOpenFigurePicker={() => setIsFigurePickerOpen((v) => !v)}
+            selectedFigureType={activeFigureType}
+            activeLineRouting={activeLineRouting}
+            onOpenLineRoutingPicker={() => setIsLineRoutingPickerOpen((v) => !v)}
+            onExportPng={handleExportPng}
+            onSaveToFile={handleSaveToFile}
+            onOpenLocalFile={handleOpenLocalFile}
+            onClearCanvas={() => setShowClearConfirm(true)}
+          />
 
-      {/* Figure Picker Popup */}
-      <FigurePickerPopup
-        isOpen={isFigurePickerOpen}
-        onClose={() => setIsFigurePickerOpen(false)}
-        onSelectFigure={(figType) => {
-          setActiveFigureType(figType);
-          setCurrentTool('figure');
-        }}
-      />
+          {/* Figure Picker Popup */}
+          <FigurePickerPopup
+            isOpen={isFigurePickerOpen}
+            onClose={() => setIsFigurePickerOpen(false)}
+            onSelectFigure={(figType) => {
+              setActiveFigureType(figType);
+              setCurrentTool('figure');
+            }}
+          />
 
-      {/* Line Routing / Connector Types Popup */}
-      <LineRoutingPopup
-        isOpen={isLineRoutingPickerOpen}
-        onClose={() => setIsLineRoutingPickerOpen(false)}
-        activeRouting={activeLineRouting}
-        onSelectRouting={(routing) => {
-          setActiveLineRouting(routing);
-          if (selectedIds.length > 0) {
-            handleUpdateElement({ lineRouting: routing });
-          } else {
-            setCurrentTool('arrow');
-          }
-        }}
-      />
+          {/* Line Routing / Connector Types Popup */}
+          <LineRoutingPopup
+            isOpen={isLineRoutingPickerOpen}
+            onClose={() => setIsLineRoutingPickerOpen(false)}
+            activeRouting={activeLineRouting}
+            onSelectRouting={(routing) => {
+              setActiveLineRouting(routing);
+              if (selectedIds.length > 0) {
+                handleUpdateElement({ lineRouting: routing });
+              } else {
+                setCurrentTool('arrow');
+              }
+            }}
+          />
 
-      {/* Infinite Canvas */}
-      <InfiniteCanvas
-        currentTool={currentTool}
-        onSelectTool={setCurrentTool}
-        elements={elements}
-        onElementsChange={setElements}
-        selectedIds={selectedIds}
-        onSelectElements={setSelectedIds}
-        viewTransform={viewTransform}
-        onViewTransformChange={setViewTransform}
-        canvasSettings={canvasSettings}
-        activeFigureType={activeFigureType}
-        activeIconName={activeIconName}
-        activeLineRouting={activeLineRouting}
-        defaultStrokeColor={defaultStrokeColor}
-        defaultFillColor={defaultFillColor}
-        svgRef={svgRef}
-        onCommitHistory={commitHistory}
-        onOpenIconPicker={() => setIsIconPickerOpen(true)}
-      />
+          {/* Infinite Canvas */}
+          <InfiniteCanvas
+            currentTool={currentTool}
+            onSelectTool={setCurrentTool}
+            elements={elements}
+            onElementsChange={setElements}
+            selectedIds={selectedIds}
+            onSelectElements={setSelectedIds}
+            viewTransform={viewTransform}
+            onViewTransformChange={setViewTransform}
+            canvasSettings={canvasSettings}
+            activeFigureType={activeFigureType}
+            activeIconName={activeIconName}
+            activeLineRouting={activeLineRouting}
+            defaultStrokeColor={defaultStrokeColor}
+            defaultFillColor={defaultFillColor}
+            svgRef={svgRef}
+            onCommitHistory={commitHistory}
+            onOpenIconPicker={() => setIsIconPickerOpen(true)}
+          />
 
-      {/* Right Sidebar (Properties Inspector & Canvas Settings) */}
-      <RightSidebar
-        selectedElements={selectedElements}
-        onUpdateElement={handleUpdateElement}
-        onBringToFront={handleBringToFront}
-        onSendToBack={handleSendToBack}
-        onBringForward={handleBringToFront}
-        onSendBackward={handleSendToBack}
-        onDuplicate={handleDuplicate}
-        onDelete={handleDelete}
-        canvasSettings={canvasSettings}
-        onUpdateCanvasSettings={(settings) =>
-          setCanvasSettings((prev) => ({ ...prev, ...settings }))
-        }
-        storageStatus={storageStatus}
-        onOpenIconPicker={() => setIsIconPickerOpen(true)}
-      />
+          {/* Right Sidebar (Properties Inspector & Canvas Settings) */}
+          <RightSidebar
+            selectedElements={selectedElements}
+            onUpdateElement={handleUpdateElement}
+            onBringToFront={handleBringToFront}
+            onSendToBack={handleSendToBack}
+            onBringForward={handleBringToFront}
+            onSendBackward={handleSendToBack}
+            onDuplicate={handleDuplicate}
+            onDelete={handleDelete}
+            canvasSettings={canvasSettings}
+            onUpdateCanvasSettings={(settings) =>
+              setCanvasSettings((prev) => ({ ...prev, ...settings }))
+            }
+            storageStatus={storageStatus}
+            onOpenIconPicker={() => setIsIconPickerOpen(true)}
+          />
+        </>
+      )}
 
       {/* React Icons Library Modal */}
       <IconPickerModal

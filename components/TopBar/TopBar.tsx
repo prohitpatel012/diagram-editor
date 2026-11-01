@@ -12,6 +12,8 @@ import {
   LuSparkles,
   LuCircleHelp,
   LuX,
+  LuDatabase,
+  LuLayers,
 } from 'react-icons/lu';
 
 interface TopBarProps {
@@ -27,6 +29,8 @@ interface TopBarProps {
   onResetZoom: () => void;
   onFitToContent: () => void;
   storageStatus: StorageStatus;
+  activeMode?: 'whiteboard' | 'er-diagram';
+  onSelectMode?: (mode: 'whiteboard' | 'er-diagram') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -42,6 +46,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onResetZoom,
   onFitToContent,
   storageStatus,
+  activeMode = 'whiteboard',
+  onSelectMode,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -88,7 +94,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
           {/* 7-day Session retention pill badge */}
           <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-[11px] text-zinc-300 hidden md:flex"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-[11px] text-zinc-300 hidden xl:flex"
             title={`Session auto-saved. Active for ${storageStatus.remainingDays} days ${storageStatus.remainingHours} hours.`}
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -100,7 +106,35 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         </div>
 
-        {/* Center: Undo / Redo */}
+        {/* Center: Mode Switcher (Whiteboard vs ER Diagram Builder) */}
+        <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 shadow-inner">
+          <button
+            onClick={() => onSelectMode?.('whiteboard')}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeMode === 'whiteboard'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+            }`}
+          >
+            <LuLayers size={13} /> Whiteboard
+          </button>
+          <button
+            onClick={() => onSelectMode?.('er-diagram')}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeMode === 'er-diagram'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+            }`}
+          >
+            <LuDatabase size={13} className={activeMode === 'er-diagram' ? 'text-white' : 'text-emerald-400'} />
+            <span>ER Diagram Builder</span>
+            <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-500/40 text-indigo-200 font-mono hidden sm:inline">
+              SQL
+            </span>
+          </button>
+        </div>
+
+        {/* Center-Right: Undo / Redo */}
         <div className="flex items-center gap-1 bg-zinc-800/40 border border-zinc-800 p-1 rounded-lg">
           <button
             onClick={onUndo}
