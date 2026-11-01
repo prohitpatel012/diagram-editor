@@ -9,11 +9,20 @@ import {
 import { ER_TEMPLATES } from '@/lib/er-templates';
 import { autoLayoutERDiagram } from '@/lib/er-layout';
 import { validateERDiagram } from '@/lib/er-validation';
+import { StorageStatus } from '@/lib/storage';
+import {
+  loadERSessionFromStorage,
+  saveERSessionToStorage,
+  clearERSessionFromStorage,
+  exportERDiagramToFile,
+  readERDiagramFile,
+} from '@/lib/er-storage';
 import { ERToolbar } from './ERToolbar';
 import { ERCanvas } from './ERCanvas';
 import { ERInspector } from './ERInspector';
 import { ERRelationshipModal } from './ERRelationshipModal';
 import { ERSqlModal } from './ERSqlModal';
+import { LuTriangleAlert } from 'react-icons/lu';
 
 const DEFAULT_VIEW_SETTINGS: ERViewSettings = {
   showDataTypes: true,
@@ -24,12 +33,34 @@ const DEFAULT_VIEW_SETTINGS: ERViewSettings = {
   gridSize: 20,
 };
 
-const STORAGE_KEY = 'er_diagram_active_v1';
+interface ERDiagramEditorProps {
+  currentTitle?: string;
+  onTitleChange?: (title: string) => void;
+  onStorageStatusChange?: (status: StorageStatus) => void;
+}
 
-export const ERDiagramEditor: React.FC = () => {
+export const ERDiagramEditor: React.FC<ERDiagramEditorProps> = ({
+  currentTitle,
+  onTitleChange,
+  onStorageStatusChange,
+}) => {
   // Main diagram state (deterministic initial state for SSR & first hydration)
   const [diagram, setDiagram] = useState<ERDiagram>(ER_TEMPLATES[0].diagram);
   const isLoadedRef = useRef(false);
+
+  // 7-day Session Storage Status State
+  const [storageStatus, setStorageStatus] = useState<StorageStatus>({
+    hasSession: true,
+    isExpired: false,
+    remainingDays: 7,
+    remainingHours: 0,
+    lastActiveDate: null,
+    isSavedToFile: false,
+  });
+
+  // Clear confirmation modal state
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // History stack for Undo / Redo
   const [history, setHistory] = useState<ERDiagram[]>([ER_TEMPLATES[0].diagram]);
@@ -52,34 +83,40 @@ export const ERDiagramEditor: React.FC = () => {
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
   const [sqlModalTab, setSqlModalTab] = useState<'export' | 'import' | 'templates'>('export');
 
-  // Client-side initial load from localStorage
+  // Sync title from TopBar parent if updated
+  useEffect(() => {
+    if (currentTitle && currentTitle !== diagram.name) {
+      setDiagram((d) => ({ ...d, name: currentTitle }));
+    }
+  }, [currentTitle, diagram.name]);
+
+  // Client-side initial load from 7-day persistent storage
   useEffect(() => {
     if (isLoadedRef.current) return;
     isLoadedRef.current = true;
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.tables)) {
-          setDiagram(parsed);
-          setHistory([parsed]);
-          setHistoryIndex(0);
-        }
+    const { session, status } = loadERSessionFromStorage();
+    if (session && session.diagram) {
+      setDiagram(session.diagram);
+      setHistory([session.diagram]);
+      setHistoryIndex(0);
+      if (session.viewSettings) setViewSettings(session.viewSettings);
+      if (session.viewport) {
+        setScale(session.viewport.scale);
+        setPan(session.viewport.pan);
       }
-    } catch (e) {
-      console.error('Failed to load ER diagram from storage', e);
+      onTitleChange?.(session.diagram.name);
     }
-  }, []);
+    setStorageStatus(status);
+    onStorageStatusChange?.(status);
+  }, [onTitleChange, onStorageStatusChange]);
 
-  // Auto-save to localStorage after initial client load
+  // Auto-save to 7-day persistent localStorage after changes
   useEffect(() => {
     if (!isLoadedRef.current) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(diagram));
-    } catch (e) {
-      console.error('Failed to save ER diagram', e);
-    }
-  }, [diagram]);
+    const status = saveERSessionToStorage(diagram, viewSettings, { scale, pan });
+    setStorageStatus(status);
+    onStorageStatusChange?.(status);
+  }, [diagram, viewSettings, scale, pan, onStorageStatusChange]);
 
   // Commit state to undo/redo history
   const commitHistory = useCallback(
@@ -553,6 +590,67 @@ export const ERDiagramEditor: React.FC = () => {
     [commitHistory, handleFitToScreen]
   );
 
+  const handleSaveToFile = () => {
+    exportERDiagramToFile(diagram);
+    const updatedStatus = saveERSessionToStorage(diagram, viewSettings, { scale, pan }, true);
+    setStorageStatus(updatedStatus);
+    onStorageStatusChange?.(updatedStatus);
+  };
+
+  const handleOpenFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const session = await readERDiagramFile(file);
+      setDiagram(session.diagram);
+      commitHistory(session.diagram);
+      if (session.viewSettings) setViewSettings(session.viewSettings);
+      if (session.viewport) {
+        setScale(session.viewport.scale);
+        setPan(session.viewport.pan);
+      }
+      const newStatus = saveERSessionToStorage(
+        session.diagram,
+        session.viewSettings,
+        session.viewport,
+        true
+      );
+      setStorageStatus(newStatus);
+      onStorageStatusChange?.(newStatus);
+      onTitleChange?.(session.diagram.name);
+    } catch (err) {
+      console.error('Failed to open ER diagram file:', err);
+      alert('Invalid ER diagram file format.');
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleConfirmClearDiagram = () => {
+    const blankDiagram: ERDiagram = {
+      id: 'er_' + Date.now(),
+      name: 'New ER Diagram',
+      tables: [],
+      relationships: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    setDiagram(blankDiagram);
+    commitHistory(blankDiagram);
+    setSelectedTableIds([]);
+    setSelectedRelationshipId(null);
+    clearERSessionFromStorage();
+    const updated = saveERSessionToStorage(blankDiagram, viewSettings, { scale: 1, pan: { x: 0, y: 0 } });
+    setStorageStatus(updated);
+    onStorageStatusChange?.(updated);
+    onTitleChange?.(blankDiagram.name);
+    setShowClearConfirm(false);
+  };
+
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-zinc-950 font-sans">
       {/* Top Controls Toolbar */}
@@ -594,6 +692,10 @@ export const ERDiagramEditor: React.FC = () => {
           setSelectedRelationshipId(relId);
           setSelectedTableIds([]);
         }}
+        storageStatus={storageStatus}
+        onSaveToFile={handleSaveToFile}
+        onOpenFile={handleOpenFile}
+        onClearDiagram={() => setShowClearConfirm(true)}
       />
 
       {/* Main Interactive Canvas */}
@@ -688,6 +790,62 @@ export const ERDiagramEditor: React.FC = () => {
         }}
         onSelectTemplate={handleSelectTemplate}
       />
+
+      {/* Hidden file input for opening .erdiagram files */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".erdiagram,.json"
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
+      {/* Clear ER Diagram Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center gap-3 text-amber-400">
+              <div className="w-10 h-10 rounded-full bg-amber-400/10 flex items-center justify-center">
+                <LuTriangleAlert size={20} />
+              </div>
+              <div>
+                <h3 className="font-semibold text-white text-base">Clear ER Diagram?</h3>
+                <p className="text-xs text-zinc-400">This will remove all tables and relationships from the canvas.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed bg-zinc-800/40 border border-zinc-800 p-3 rounded-lg">
+              Your diagram is automatically kept safe in browser storage for 7 days. To make sure you never lose anything, you can also download a backup file before clearing.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleSaveToFile();
+                }}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors border border-zinc-700"
+              >
+                Export Backup First
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearDiagram}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors shadow-lg shadow-red-600/20"
+              >
+                Yes, Clear Canvas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

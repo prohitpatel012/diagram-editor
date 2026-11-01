@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ERViewSettings, ValidationIssue } from '@/types/er';
+import { StorageStatus } from '@/lib/storage';
 import { ERValidationBanner } from './ERValidationBanner';
 import {
   LuPlus,
@@ -13,6 +14,10 @@ import {
   LuRedo2,
   LuEye,
   LuCheck,
+  LuClock,
+  LuDownload,
+  LuUpload,
+  LuTrash2,
 } from 'react-icons/lu';
 
 interface ERToolbarProps {
@@ -36,6 +41,10 @@ interface ERToolbarProps {
   validationIssues: ValidationIssue[];
   onSelectTable?: (tableId: string) => void;
   onSelectRelationship?: (relId: string) => void;
+  storageStatus?: StorageStatus;
+  onSaveToFile?: () => void;
+  onOpenFile?: () => void;
+  onClearDiagram?: () => void;
 }
 
 export const ERToolbar: React.FC<ERToolbarProps> = ({
@@ -59,12 +68,16 @@ export const ERToolbar: React.FC<ERToolbarProps> = ({
   validationIssues,
   onSelectTable,
   onSelectRelationship,
+  storageStatus,
+  onSaveToFile,
+  onOpenFile,
+  onClearDiagram,
 }) => {
   const [showViewMenu, setShowViewMenu] = useState(false);
   const zoomPercent = Math.round(scale * 100);
 
   return (
-    <div className="fixed top-15 left-4 z-20 flex items-center gap-2 select-none">
+    <div className="fixed top-15 left-4 z-20 flex flex-wrap items-center gap-2 select-none">
       {/* Primary Actions Pill */}
       <div className="flex items-center gap-1.5 p-1 bg-zinc-900/90 border border-zinc-800 rounded-xl backdrop-blur-md shadow-2xl">
         {/* Add Table Button */}
@@ -187,6 +200,41 @@ export const ERToolbar: React.FC<ERToolbarProps> = ({
 
         <div className="w-[1px] h-4 bg-zinc-800 my-auto" />
 
+        {/* File Backup & Restore Actions */}
+        {onSaveToFile && (
+          <button
+            onClick={onSaveToFile}
+            title="Download full ER diagram backup file (.erdiagram)"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-emerald-400 text-xs font-medium transition-colors"
+          >
+            <LuDownload size={14} />
+            <span className="hidden xl:inline">Backup</span>
+          </button>
+        )}
+
+        {onOpenFile && (
+          <button
+            onClick={onOpenFile}
+            title="Open ER diagram backup file from computer"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-blue-400 text-xs font-medium transition-colors"
+          >
+            <LuUpload size={14} />
+            <span className="hidden xl:inline">Open</span>
+          </button>
+        )}
+
+        {onClearDiagram && (
+          <button
+            onClick={onClearDiagram}
+            title="Clear ER canvas"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <LuTrash2 size={14} />
+          </button>
+        )}
+
+        <div className="w-[1px] h-4 bg-zinc-800 my-auto" />
+
         {/* Undo / Redo */}
         <button
           onClick={onUndo}
@@ -237,6 +285,23 @@ export const ERToolbar: React.FC<ERToolbarProps> = ({
           <LuMaximize size={15} />
         </button>
       </div>
+
+      {/* 7-day Session Retention Pill Badge */}
+      {storageStatus && (
+        <div
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-xs text-zinc-300 backdrop-blur-md shadow-2xl"
+          title={`ER Diagram auto-saved in browser. Active for ${storageStatus.remainingDays} days ${storageStatus.remainingHours} hours from your last edit without losing your canvas.`}
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <LuClock size={13} className="text-zinc-400" />
+          <span className="font-medium text-zinc-200 hidden md:inline">
+            {storageStatus.isSavedToFile ? 'Saved to file (Safe)' : '7d Session Active'}
+          </span>
+          <span className="text-zinc-400 text-[11px] font-mono">
+            ({storageStatus.isSavedToFile ? 'Safe' : `${storageStatus.remainingDays}d ${storageStatus.remainingHours}h left`})
+          </span>
+        </div>
+      )}
 
       {/* Schema Validation Banner */}
       <ERValidationBanner

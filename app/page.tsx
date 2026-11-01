@@ -256,6 +256,15 @@ export default function WhiteboardPage() {
   };
 
   const [boardTitle, setBoardTitle] = useState('Untitled Diagram');
+  const [erTitle, setErTitle] = useState('E-Commerce Platform Schema');
+  const [erStorageStatus, setErStorageStatus] = useState<StorageStatus>({
+    hasSession: true,
+    isExpired: false,
+    remainingDays: 7,
+    remainingHours: 0,
+    lastActiveDate: null,
+    isSavedToFile: false,
+  });
   const [currentTool, setCurrentTool] = useState<Tool>('select');
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -585,8 +594,8 @@ export default function WhiteboardPage() {
     <main className="relative w-screen h-screen overflow-hidden bg-zinc-950 font-sans">
       {/* Top Bar */}
       <TopBar
-        title={boardTitle}
-        onUpdateTitle={setBoardTitle}
+        title={appMode === 'er-diagram' ? erTitle : boardTitle}
+        onUpdateTitle={appMode === 'er-diagram' ? setErTitle : setBoardTitle}
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
         onUndo={handleUndo}
@@ -600,7 +609,7 @@ export default function WhiteboardPage() {
         }
         onResetZoom={() => setViewTransform((v) => ({ ...v, scale: 1 }))}
         onFitToContent={handleFitToContent}
-        storageStatus={storageStatus}
+        storageStatus={appMode === 'er-diagram' ? erStorageStatus : storageStatus}
         activeMode={appMode}
         onSelectMode={handleSelectMode}
       />
@@ -608,7 +617,11 @@ export default function WhiteboardPage() {
       {/* Main Mode View */}
       {appMode === 'er-diagram' ? (
         <div className="absolute inset-0 pt-13">
-          <ERDiagramEditor />
+          <ERDiagramEditor
+            currentTitle={erTitle}
+            onTitleChange={setErTitle}
+            onStorageStatusChange={setErStorageStatus}
+          />
         </div>
       ) : (
         <>
