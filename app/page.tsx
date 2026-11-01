@@ -623,6 +623,7 @@ export default function WhiteboardPage() {
         defaultFillColor={defaultFillColor}
         svgRef={svgRef}
         onCommitHistory={commitHistory}
+        onOpenIconPicker={() => setIsIconPickerOpen(true)}
       />
 
       {/* Right Sidebar (Properties Inspector & Canvas Settings) */}

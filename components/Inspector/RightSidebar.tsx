@@ -14,6 +14,7 @@ import {
   LINE_ROUTING_OPTIONS,
   CORNER_RADIUS_PRESETS,
   FONT_FAMILIES,
+  FONT_SIZE_PRESETS,
   FIGURE_DEFINITIONS,
   CANVAS_BACKGROUNDS,
 } from '@/lib/constants';
@@ -23,7 +24,6 @@ import {
   LuSendToBack,
   LuCopy,
   LuTrash2,
-  // LuGrid,
   LuSparkles,
   LuAlignLeft,
   LuAlignCenter,
@@ -32,8 +32,13 @@ import {
   LuSlidersHorizontal,
   LuGrid2X2,
   LuCheckCheck,
-  // LuCheckCircle2,
-  // LuSliders,
+  LuBold,
+  LuMinus,
+  LuType,
+  LuPlus,
+  LuLayoutGrid,
+  LuCircleCheck,
+
 } from 'react-icons/lu';
 
 interface RightSidebarProps {
@@ -95,6 +100,129 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Typography & Text Size Controls (Shown prominent when text or labeled shape is selected) */}
+          {(primaryElement.type === 'text' || primaryElement.text !== undefined) && (
+            <div className="space-y-3 p-3 bg-zinc-800/40 border border-zinc-800 rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-white flex items-center gap-1.5 text-xs">
+                  <LuType size={14} className="text-blue-400" />
+                  Typography & Text Size
+                </span>
+                <span className="font-mono text-blue-400 text-[11px] font-semibold">
+                  {primaryElement.fontSize || 20}px
+                </span>
+              </div>
+
+              {/* Font Family Selector */}
+              <div className="space-y-1">
+                <span className="text-zinc-400 text-[11px]">Font Family</span>
+                <select
+                  value={primaryElement.fontFamily || FONT_FAMILIES[0].value}
+                  onChange={(e) => onUpdateElement({ fontFamily: e.target.value })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none cursor-pointer hover:border-zinc-600"
+                >
+                  {FONT_FAMILIES.map((font) => (
+                    <option key={font.label} value={font.value}>
+                      {font.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Font Size: Steppers [-] [+] & Quick Presets */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400 text-[11px]">Text Size</span>
+                  <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateElement({ fontSize: Math.max(8, (primaryElement.fontSize || 20) - 2) })}
+                      title="Decrease text size (-2px)"
+                      className="px-2 py-0.5 hover:bg-zinc-700 text-zinc-300 hover:text-white"
+                    >
+                      <LuMinus size={11} />
+                    </button>
+                    <input
+                      type="number"
+                      min="8"
+                      max="160"
+                      value={primaryElement.fontSize || 20}
+                      onChange={(e) => onUpdateElement({ fontSize: Number(e.target.value) })}
+                      className="w-12 px-1 py-0.5 bg-transparent text-center font-mono text-xs text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onUpdateElement({ fontSize: Math.min(160, (primaryElement.fontSize || 20) + 2) })}
+                      title="Increase text size (+2px)"
+                      className="px-2 py-0.5 hover:bg-zinc-700 text-zinc-300 hover:text-white"
+                    >
+                      <LuPlus size={11} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preset Size Pills */}
+                <div className="grid grid-cols-7 gap-1">
+                  {FONT_SIZE_PRESETS.map((sz) => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => onUpdateElement({ fontSize: sz })}
+                      className={`py-1 rounded border text-[10px] font-mono transition-colors ${(primaryElement.fontSize || 20) === sz
+                        ? 'bg-blue-600 border-blue-500 text-white font-bold'
+                        : 'border-zinc-800 bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 text-zinc-300'
+                        }`}
+                    >
+                      {sz}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Slider for smooth text resizing */}
+                <input
+                  type="range"
+                  min="8"
+                  max="120"
+                  value={primaryElement.fontSize || 20}
+                  onChange={(e) => onUpdateElement({ fontSize: Number(e.target.value) })}
+                  className="w-full accent-blue-500 cursor-pointer pt-1"
+                />
+              </div>
+
+              {/* Weight & Alignment */}
+              <div className="flex items-center gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onUpdateElement({ fontWeight: primaryElement.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                  className={`flex-1 py-1 px-2 rounded border flex items-center justify-center gap-1 text-[11px] transition-colors ${primaryElement.fontWeight === 'bold'
+                    ? 'bg-blue-600 border-blue-500 text-white font-bold'
+                    : 'border-zinc-800 bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                    }`}
+                >
+                  <LuBold size={12} />
+                  <span>Bold</span>
+                </button>
+
+                <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded overflow-hidden">
+                  {(['left', 'center', 'right'] as const).map((align) => (
+                    <button
+                      key={align}
+                      type="button"
+                      onClick={() => onUpdateElement({ textAlign: align })}
+                      className={`p-1.5 hover:bg-zinc-700 transition-colors ${primaryElement.textAlign === align ? 'bg-blue-600/40 text-blue-300' : 'text-zinc-400'
+                        }`}
+                      title={`Align ${align}`}
+                    >
+                      {align === 'left' && <LuAlignLeft size={13} />}
+                      {align === 'center' && <LuAlignCenter size={13} />}
+                      {align === 'right' && <LuAlignRight size={13} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 1. Stroke / Border & Foreground Color */}
           <div className="space-y-1.5">
@@ -317,11 +445,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     <button
                       key={opt.value}
                       onClick={() => onUpdateElement({ lineRouting: opt.value })}
-                      className={`p-2 rounded-lg border flex flex-col items-start gap-1 transition-all ${
-                        isCur
-                          ? 'bg-blue-600/25 border-blue-500 text-white shadow-sm'
-                          : 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-                      }`}
+                      className={`p-2 rounded-lg border flex flex-col items-start gap-1 transition-all ${isCur
+                        ? 'bg-blue-600/25 border-blue-500 text-white shadow-sm'
+                        : 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                        }`}
                       title={opt.description}
                     >
                       <div className="flex items-center justify-between w-full">
@@ -415,57 +542,6 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             </div>
           )}
 
-          {/* 9. Text specific controls */}
-          {(primaryElement.type === 'text' || primaryElement.text) && (
-            <div className="space-y-2 pt-2 border-t border-zinc-800">
-              <span className="text-zinc-400 font-medium">Typography</span>
-              {/* Font Size */}
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400 text-[11px]">Size:</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min="8"
-                    max="144"
-                    value={primaryElement.fontSize || 18}
-                    onChange={(e) => onUpdateElement({ fontSize: Number(e.target.value) })}
-                    className="w-16 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-right font-mono text-xs text-white"
-                  />
-                  <span className="text-zinc-500">px</span>
-                </div>
-              </div>
-              {/* Font Family */}
-              <select
-                value={primaryElement.fontFamily || FONT_FAMILIES[0].value}
-                onChange={(e) => onUpdateElement({ fontFamily: e.target.value })}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none"
-              >
-                {FONT_FAMILIES.map((font) => (
-                  <option key={font.label} value={font.value}>
-                    {font.label}
-                  </option>
-                ))}
-              </select>
-              {/* Text Align */}
-              <div className="flex items-center gap-1">
-                {(['left', 'center', 'right'] as const).map((align) => (
-                  <button
-                    key={align}
-                    onClick={() => onUpdateElement({ textAlign: align })}
-                    className={`flex-1 py-1 rounded border flex items-center justify-center transition-colors ${primaryElement.textAlign === align
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-800'
-                      }`}
-                  >
-                    {align === 'left' && <LuAlignLeft size={14} />}
-                    {align === 'center' && <LuAlignCenter size={14} />}
-                    {align === 'right' && <LuAlignRight size={14} />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* 10. Layer Arrangement */}
           <div className="space-y-1.5 pt-2 border-t border-zinc-800">
             <span className="text-zinc-400 font-medium">Layer Ordering</span>
@@ -490,7 +566,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         <div className="space-y-4">
           <div className="border-b border-zinc-800 pb-2">
             <span className="font-semibold text-white flex items-center gap-1.5 text-sm">
-              <LuGrid2X2 size={14} className="text-blue-400" />
+              <LuLayoutGrid size={14} className="text-blue-400" />
               Canvas Settings
             </span>
             <p className="text-[10px] text-zinc-500 mt-0.5">Global whiteboard workspace</p>
@@ -556,7 +632,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           {/* 7-Day Session Card */}
           <div className="p-3 bg-zinc-800/40 border border-zinc-800 rounded-lg space-y-1.5 pt-2.5">
             <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11px]">
-              <LuCheckCheck size={13} />
+              <LuCircleCheck size={13} />
               <span>Session Auto-Save Active</span>
             </div>
             <p className="text-[10px] text-zinc-400 leading-relaxed">

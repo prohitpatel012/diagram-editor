@@ -82,11 +82,14 @@ export const CORNER_RADIUS_PRESETS = [
 ];
 
 export const FONT_FAMILIES = [
-  { label: 'Inter (Sans)', value: 'var(--font-sans), Inter, sans-serif' },
-  { label: 'Monospace', value: 'monospace, "Courier New", Courier' },
-  { label: 'Serif', value: 'Georgia, Cambria, "Times New Roman", serif' },
-  { label: 'Caveat (Hand)', value: 'cursive, "Comic Sans MS", sans-serif' },
+  { label: 'Inter (Sans)', value: '"Inter", var(--font-sans), system-ui, sans-serif' },
+  { label: 'Fira Code (Mono)', value: '"Fira Code", var(--font-mono), monospace' },
+  { label: 'Caveat (Handwritten)', value: '"Caveat", cursive, "Comic Sans MS", sans-serif' },
+  { label: 'Serif (Classic)', value: 'Georgia, Cambria, "Times New Roman", serif' },
+  { label: 'System UI', value: 'system-ui, -apple-system, sans-serif' },
 ];
+
+export const FONT_SIZE_PRESETS = [12, 16, 20, 24, 32, 48, 64];
 
 export const FIGURE_DEFINITIONS: { type: FigureType; label: string; description: string }[] = [
   { type: 'diamond', label: 'Decision (Diamond)', description: 'Flowchart decision node' },

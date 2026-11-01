@@ -12,6 +12,7 @@ import {
 import { CanvasElementRenderer } from './CanvasElementRenderer';
 import { TransformHandles } from './TransformHandles';
 import { TextEditorOverlay } from './TextEditorOverlay';
+import { FloatingTextToolbar } from './FloatingTextToolbar';
 
 interface InfiniteCanvasProps {
   currentTool: Tool;
@@ -30,6 +31,7 @@ interface InfiniteCanvasProps {
   defaultFillColor: string;
   svgRef: React.RefObject<SVGSVGElement | null>;
   onCommitHistory: (elements: CanvasElement[]) => void;
+  onOpenIconPicker?: () => void;
 }
 
 export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
@@ -49,6 +51,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   defaultFillColor,
   svgRef,
   onCommitHistory,
+  onOpenIconPicker,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -100,7 +103,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   // Keyboard Shortcuts (Space for Pan, Escape, Delete, Arrows)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // If typing in input/textarea, ignore
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
         return;
       }
@@ -182,7 +184,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
       e.preventDefault();
 
       if (e.ctrlKey || e.metaKey) {
-        // Zooming at mouse coordinate
         const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
         const newScale = Math.min(5.0, Math.max(0.1, viewTransform.scale * zoomFactor));
 
@@ -202,7 +203,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
           scale: newScale,
         });
       } else {
-        // Free infinite scroll in X and Y
         onViewTransformChange({
           ...viewTransform,
           x: viewTransform.x - e.deltaX,
@@ -215,14 +215,13 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
 
   // Mouse Down: Start Pan, Select, Draw, or Move
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Middle mouse click or Space held or Pan tool: start pan
     if (e.button === 1 || isSpacePressed || currentTool === 'pan') {
       setIsPanning(true);
       setPanStart({ x: e.clientX - viewTransform.x, y: e.clientY - viewTransform.y });
       return;
     }
 
-    if (e.button !== 0) return; // Only primary button for drawing/selection
+    if (e.button !== 0) return;
 
     const world = screenToWorld(e.clientX, e.clientY);
     const snappedX = snapValue(world.x);
@@ -246,7 +245,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
         opacity: 100,
         text: '',
         fontSize: 20,
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: '"Inter", var(--font-sans), system-ui, sans-serif',
         textAlign: 'left',
         zIndex: elements.length + 1,
       };
@@ -316,7 +315,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
     // 4. Selection Tool: Hit-testing elements or start Marquee
     if (currentTool === 'select') {
       const clickedEl = [...elements].reverse().find((el) => {
-        // Line or arrow hit-test
         if (el.type === 'line' || el.type === 'arrow') {
           const x1 = el.x;
           const y1 = el.y;
@@ -329,12 +327,10 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
           return world.x >= minX && world.x <= maxX && world.y >= minY && world.y <= maxY;
         }
 
-        // Free draw hit-test
         if (el.type === 'draw' && el.points) {
           return el.points.some((pt) => Math.hypot(pt.x - world.x, pt.y - world.y) < 14);
         }
 
-        // Box hit-test
         const left = Math.min(el.x, el.x + el.width);
         const top = Math.min(el.y, el.y + el.height);
         const right = Math.max(el.x, el.x + el.width);
@@ -344,27 +340,23 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
 
       if (clickedEl) {
         if (e.shiftKey) {
-          // Toggle selection
           if (selectedIds.includes(clickedEl.id)) {
             onSelectElements(selectedIds.filter((id) => id !== clickedEl.id));
           } else {
             onSelectElements([...selectedIds, clickedEl.id]);
           }
         } else {
-          // Single select (or preserve if already part of multi-selection)
           if (!selectedIds.includes(clickedEl.id)) {
             onSelectElements([clickedEl.id]);
           }
         }
 
-        // Start dragging selected elements
         setIsDraggingElements(true);
         setDragStartPoint(world);
         setInitialElementPositions(
           elements.map((el) => ({ id: el.id, x: el.x, y: el.y }))
         );
       } else {
-        // Clicked on empty space: clear selection and start marquee
         if (!e.shiftKey) {
           onSelectElements([]);
         }
@@ -392,7 +384,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
 
   // Mouse Move: Pan, Draw, Drag, Resize, Marquee
   const handleMouseMove = (e: React.MouseEvent) => {
-    // 1. Panning
     if (isPanning) {
       onViewTransformChange({
         ...viewTransform,
@@ -415,7 +406,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
       let nextW = init.width;
       let nextH = init.height;
 
-      // Handle arrow start/end
       if (init.type === 'arrow' || init.type === 'line') {
         if (activeResizeHandle === 'start') {
           nextX = init.x + dx;
@@ -427,7 +417,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
           nextH = init.height + dy;
         }
       } else {
-        // Standard 8 handles
         if (activeResizeHandle.includes('e')) {
           nextW = Math.max(2, init.width + dx);
         }
@@ -445,7 +434,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
           nextH = newH;
         }
 
-        // For icons or when shift is pressed, maintain 1:1 aspect ratio
         if (init.type === 'icon' || e.shiftKey) {
           const maxDim = Math.max(nextW, nextH);
           nextW = maxDim;
@@ -482,7 +470,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
           const newX = snapValue(baseX + dx);
           const newY = snapValue(baseY + dy);
 
-          // Update free draw points too
           let newPoints: Point[] | undefined = undefined;
           if (el.points && initialPos) {
             const shiftX = newX - initialPos.x;
@@ -518,7 +505,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
         let w = world.x - startX;
         let h = world.y - startY;
 
-        // Shift key locks 1:1 aspect ratio for rectangles / circles / figures
         if (e.shiftKey && drawingElement.type !== 'arrow' && drawingElement.type !== 'line') {
           const size = Math.max(Math.abs(w), Math.abs(h));
           w = (w < 0 ? -1 : 1) * size;
@@ -542,7 +528,6 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
         y2: world.y,
       });
 
-      // Find all elements intersecting marquee box
       const minX = Math.min(marqueeBox.x1, world.x);
       const maxX = Math.max(marqueeBox.x1, world.x);
       const minY = Math.min(marqueeBox.y1, world.y);
@@ -622,7 +607,11 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
     }
   };
 
-  // Double click on element or EMPTY CANVAS to write free text
+  // Double click handling:
+  // - Icons: NEVER delete or shrink! Select and open Icon Picker to change icon.
+  // - Lines / Arrows / Drawings: Select only.
+  // - Text / Shapes: Open in-place text editor.
+  // - Blank canvas: Create new free text element.
   const handleDoubleClick = (e: React.MouseEvent) => {
     const world = screenToWorld(e.clientX, e.clientY);
     const clickedEl = [...elements].reverse().find((el) => {
@@ -634,6 +623,22 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
     });
 
     if (clickedEl) {
+      // 1. Icon: Select it and open Icon Picker without any destructive resize/delete!
+      if (clickedEl.type === 'icon') {
+        onSelectElements([clickedEl.id]);
+        if (onOpenIconPicker) {
+          onOpenIconPicker();
+        }
+        return;
+      }
+
+      // 2. Lines / Arrows / Free Draw: Select only
+      if (clickedEl.type === 'line' || clickedEl.type === 'arrow' || clickedEl.type === 'draw') {
+        onSelectElements([clickedEl.id]);
+        return;
+      }
+
+      // 3. Text or Shapes with text (Rectangle, Ellipse, Figure)
       setEditingElementId(clickedEl.id);
       onSelectElements([clickedEl.id]);
     } else {
@@ -654,7 +659,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
         opacity: 100,
         text: '',
         fontSize: 20,
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: '"Inter", var(--font-sans), system-ui, sans-serif',
         textAlign: 'left',
         zIndex: elements.length + 1,
       };
@@ -683,6 +688,11 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   // Active element being edited inline
   const editingElement = editingElementId
     ? elements.find((el) => el.id === editingElementId)
+    : null;
+
+  // Single selected element for floating toolbar
+  const singleSelectedElement = selectedIds.length === 1 && !editingElementId
+    ? elements.find((el) => el.id === selectedIds[0])
     : null;
 
   return (
@@ -813,32 +823,64 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
         </g>
       </svg>
 
+      {/* Floating Quick Typography Toolbar for selected text */}
+      {singleSelectedElement && singleSelectedElement.type === 'text' && (
+        <FloatingTextToolbar
+          element={singleSelectedElement}
+          viewTransform={viewTransform}
+          onUpdateElement={(updates) => {
+            const next = elements.map((el) =>
+              el.id === singleSelectedElement.id ? { ...el, ...updates } : el
+            );
+            onElementsChange(next);
+            onCommitHistory(next);
+          }}
+        />
+      )}
+
       {/* Inline Text Editor Overlay (Seamless Free Text) */}
       {editingElement && (
         <TextEditorOverlay
           element={editingElement}
           viewTransform={viewTransform}
-          onCommit={(newText) => {
-            if (!newText.trim()) {
-              // User left empty text -> discard empty element cleanly
-              const next = elements.filter((el) => el.id !== editingElement.id);
-              onElementsChange(next);
-              onCommitHistory(next);
-              onSelectElements([]);
-            } else {
-              // Calculate natural bounding width & height for free text
-              const lines = newText.split('\n');
-              const maxLineLen = Math.max(...lines.map((l) => l.length));
-              const approxW = Math.max(80, maxLineLen * ((editingElement.fontSize || 20) * 0.62));
-              const approxH = Math.max(30, lines.length * ((editingElement.fontSize || 20) * 1.3));
+          onCommit={(newText, updates) => {
+            if (editingElement.type === 'text') {
+              if (!newText.trim()) {
+                // Discard empty text cleanly
+                const next = elements.filter((el) => el.id !== editingElement.id);
+                onElementsChange(next);
+                onCommitHistory(next);
+                onSelectElements([]);
+              } else {
+                const lines = newText.split('\n');
+                const maxLineLen = Math.max(...lines.map((l) => l.length));
+                const fontSize = updates?.fontSize || editingElement.fontSize || 20;
+                const approxW = Math.max(80, maxLineLen * (fontSize * 0.62));
+                const approxH = Math.max(30, lines.length * (fontSize * 1.3));
 
+                const next = elements.map((el) =>
+                  el.id === editingElement.id
+                    ? {
+                        ...el,
+                        ...updates,
+                        text: newText,
+                        width: approxW,
+                        height: approxH,
+                      }
+                    : el
+                );
+                onElementsChange(next);
+                onCommitHistory(next);
+              }
+            } else {
+              // For shapes (rectangle, ellipse, figure):
+              // NEVER delete the shape or change its width/height! Only update label!
               const next = elements.map((el) =>
                 el.id === editingElement.id
                   ? {
                       ...el,
-                      text: newText,
-                      width: approxW,
-                      height: approxH,
+                      ...updates,
+                      text: newText.trim() ? newText : undefined,
                     }
                   : el
               );
@@ -848,8 +890,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
             setEditingElementId(null);
           }}
           onCancel={() => {
-            // If it had no text before, delete it
-            if (!editingElement.text || !editingElement.text.trim()) {
+            if (editingElement.type === 'text' && (!editingElement.text || !editingElement.text.trim())) {
               const next = elements.filter((el) => el.id !== editingElement.id);
               onElementsChange(next);
               onCommitHistory(next);
