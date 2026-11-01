@@ -14,7 +14,10 @@ import {
   LuX,
   LuDatabase,
   LuLayers,
+  LuFileText,
 } from 'react-icons/lu';
+
+export type AppMode = 'whiteboard' | 'er-diagram' | 'meeting-notes';
 
 interface TopBarProps {
   title: string;
@@ -29,8 +32,8 @@ interface TopBarProps {
   onResetZoom: () => void;
   onFitToContent: () => void;
   storageStatus: StorageStatus;
-  activeMode?: 'whiteboard' | 'er-diagram';
-  onSelectMode?: (mode: 'whiteboard' | 'er-diagram') => void;
+  activeMode?: AppMode;
+  onSelectMode?: (mode: AppMode) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -130,6 +133,20 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span>ER Diagram Builder</span>
             <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-500/40 text-indigo-200 font-mono hidden sm:inline">
               SQL
+            </span>
+          </button>
+          <button
+            onClick={() => onSelectMode?.('meeting-notes')}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeMode === 'meeting-notes'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+            }`}
+          >
+            <LuFileText size={13} className={activeMode === 'meeting-notes' ? 'text-white' : 'text-amber-400'} />
+            <span>Meeting Notes</span>
+            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-mono hidden sm:inline">
+              Ctrl+V
             </span>
           </button>
         </div>

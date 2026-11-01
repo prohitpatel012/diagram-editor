@@ -19,7 +19,7 @@ import {
 } from '@/lib/storage';
 import { exportSvgToPng } from '@/lib/export';
 import { DEFAULT_CANVAS_SETTINGS } from '@/lib/constants';
-import { TopBar } from '@/components/TopBar/TopBar';
+import { TopBar, AppMode } from '@/components/TopBar/TopBar';
 import { LeftSidebar } from '@/components/Sidebar/LeftSidebar';
 import { RightSidebar } from '@/components/Inspector/RightSidebar';
 import { InfiniteCanvas } from '@/components/Canvas/InfiniteCanvas';
@@ -28,6 +28,7 @@ import { FigurePickerPopup } from '@/components/Sidebar/FigurePickerPopup';
 import { LineRoutingPopup } from '@/components/Sidebar/LineRoutingPopup';
 import { ensureLinePoints } from '@/components/Canvas/CanvasElementRenderer';
 import { ERDiagramEditor } from '@/components/ERDiagram/ERDiagramEditor';
+import { MeetingNotesWorkspace } from '@/components/MeetingNotes/MeetingNotesWorkspace';
 
 const STARTER_ELEMENTS: CanvasElement[] = [
   {
@@ -233,12 +234,12 @@ const STARTER_ELEMENTS: CanvasElement[] = [
 ];
 
 export default function WhiteboardPage() {
-  const [appMode, setAppMode] = useState<'whiteboard' | 'er-diagram'>('er-diagram');
+  const [appMode, setAppMode] = useState<AppMode>('meeting-notes');
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('app_active_mode');
-      if (saved === 'whiteboard' || saved === 'er-diagram') {
+      const saved = localStorage.getItem('app_active_mode') as AppMode;
+      if (saved === 'whiteboard' || saved === 'er-diagram' || saved === 'meeting-notes') {
         setAppMode(saved);
       }
     } catch (e) {
@@ -246,7 +247,7 @@ export default function WhiteboardPage() {
     }
   }, []);
 
-  const handleSelectMode = (mode: 'whiteboard' | 'er-diagram') => {
+  const handleSelectMode = (mode: AppMode) => {
     setAppMode(mode);
     try {
       localStorage.setItem('app_active_mode', mode);
@@ -615,7 +616,11 @@ export default function WhiteboardPage() {
       />
 
       {/* Main Mode View */}
-      {appMode === 'er-diagram' ? (
+      {appMode === 'meeting-notes' ? (
+        <div className="absolute inset-0 pt-13">
+          <MeetingNotesWorkspace />
+        </div>
+      ) : appMode === 'er-diagram' ? (
         <div className="absolute inset-0 pt-13">
           <ERDiagramEditor
             currentTitle={erTitle}
