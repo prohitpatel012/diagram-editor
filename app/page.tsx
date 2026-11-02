@@ -234,7 +234,7 @@ const STARTER_ELEMENTS: CanvasElement[] = [
 ];
 
 export default function WhiteboardPage() {
-  const [appMode, setAppMode] = useState<AppMode>('meeting-notes');
+  const [appMode, setAppMode] = useState<AppMode>('whiteboard');
 
   useEffect(() => {
     try {
@@ -246,15 +246,6 @@ export default function WhiteboardPage() {
       console.error(e);
     }
   }, []);
-
-  const handleSelectMode = (mode: AppMode) => {
-    setAppMode(mode);
-    try {
-      localStorage.setItem('app_active_mode', mode);
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   const [boardTitle, setBoardTitle] = useState('Untitled Diagram');
   const [erTitle, setErTitle] = useState('E-Commerce Platform Schema');
@@ -304,15 +295,58 @@ export default function WhiteboardPage() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const isInitializedRef = useRef(false);
 
+  // Helper to immediately save whiteboard session to 7-day storage
+  const saveCurrentWhiteboard = useCallback(
+    (
+      currentElements: CanvasElement[],
+      currentTransform = viewTransform,
+      currentSettings = canvasSettings,
+      currentTitle = boardTitle
+    ) => {
+      const status = saveSessionToStorage(
+        currentElements,
+        currentTransform,
+        currentSettings,
+        currentTitle,
+        storageStatus.isSavedToFile
+      );
+      setStorageStatus(status);
+    },
+    [viewTransform, canvasSettings, boardTitle, storageStatus.isSavedToFile]
+  );
+
+  const handleSelectMode = (mode: AppMode) => {
+    // If leaving whiteboard, save whiteboard immediately
+    if (appMode === 'whiteboard' && elements.length > 0) {
+      saveCurrentWhiteboard(elements);
+    }
+    setAppMode(mode);
+    try {
+      localStorage.setItem('app_active_mode', mode);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // 1. Initial Load: Restore from 7-day Local Storage
   useEffect(() => {
     if (isInitializedRef.current) return;
     isInitializedRef.current = true;
 
+    // Restore app mode
+    try {
+      const savedMode = localStorage.getItem('app_active_mode') as AppMode;
+      if (savedMode === 'whiteboard' || savedMode === 'er-diagram' || savedMode === 'meeting-notes') {
+        setAppMode(savedMode);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
     const { session, status } = loadSessionFromStorage();
     setStorageStatus(status);
 
-    if (session && session.elements && session.elements.length > 0) {
+    if (session && Array.isArray(session.elements) && session.elements.length > 0) {
       setElements(session.elements);
       if (session.viewTransform) setViewTransform(session.viewTransform);
       if (session.settings) setCanvasSettings(session.settings);
@@ -320,27 +354,47 @@ export default function WhiteboardPage() {
 
       setHistory([session.elements]);
       setHistoryIndex(0);
+    } else if (session && Array.isArray(session.elements)) {
+      // User has an existing saved session with 0 elements (canvas cleared)
+      setElements([]);
+      if (session.viewTransform) setViewTransform(session.viewTransform);
+      if (session.settings) setCanvasSettings(session.settings);
+      if (session.title) setBoardTitle(session.title);
+      setHistory([[]]);
+      setHistoryIndex(0);
     } else {
       // First-time starter template
       setElements(STARTER_ELEMENTS);
       setHistory([STARTER_ELEMENTS]);
       setHistoryIndex(0);
-      saveSessionToStorage(STARTER_ELEMENTS, { x: 40, y: 40, scale: 1 }, DEFAULT_CANVAS_SETTINGS, 'Untitled Diagram');
+      const initStatus = saveSessionToStorage(STARTER_ELEMENTS, { x: 40, y: 40, scale: 1 }, DEFAULT_CANVAS_SETTINGS, 'Untitled Diagram');
+      setStorageStatus(initStatus);
     }
   }, []);
 
   // 2. Debounced Auto-Save to 7-Day Session Storage
   useEffect(() => {
-    if (!isInitializedRef.current || elements.length === 0) return;
+    if (!isInitializedRef.current) return;
 
     const timer = setTimeout(() => {
-      saveSessionToStorage(elements, viewTransform, canvasSettings, boardTitle, storageStatus.isSavedToFile);
+      saveCurrentWhiteboard(elements, viewTransform, canvasSettings, boardTitle);
     }, 400);
 
     return () => clearTimeout(timer);
+  }, [elements, viewTransform, canvasSettings, boardTitle, saveCurrentWhiteboard]);
+
+  // 3. Save synchronously on page unload / refresh
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (elements.length > 0) {
+        saveSessionToStorage(elements, viewTransform, canvasSettings, boardTitle, storageStatus.isSavedToFile);
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [elements, viewTransform, canvasSettings, boardTitle, storageStatus.isSavedToFile]);
 
-  // History Commit
+  // History Commit - saves IMMEDIATELY so page refresh never loses any drawn elements
   const commitHistory = useCallback(
     (newElements: CanvasElement[]) => {
       setHistory((prev) => {
@@ -350,8 +404,9 @@ export default function WhiteboardPage() {
         return next;
       });
       setHistoryIndex((prev) => Math.min(prev + 1, 49));
+      saveCurrentWhiteboard(newElements);
     },
-    [historyIndex]
+    [historyIndex, saveCurrentWhiteboard]
   );
 
   // Undo Handler
@@ -362,8 +417,9 @@ export default function WhiteboardPage() {
       setHistoryIndex(prevIndex);
       setElements(targetState);
       setSelectedIds([]);
+      saveCurrentWhiteboard(targetState);
     }
-  }, [history, historyIndex]);
+  }, [history, historyIndex, saveCurrentWhiteboard]);
 
   // Redo Handler
   const handleRedo = useCallback(() => {
@@ -373,8 +429,9 @@ export default function WhiteboardPage() {
       setHistoryIndex(nextIndex);
       setElements(targetState);
       setSelectedIds([]);
+      saveCurrentWhiteboard(targetState);
     }
-  }, [history, historyIndex]);
+  }, [history, historyIndex, saveCurrentWhiteboard]);
 
   // Duplicate Selected Elements
   const handleDuplicate = useCallback(() => {
@@ -507,29 +564,36 @@ export default function WhiteboardPage() {
   // Save to Local File (.whiteboard)
   const handleSaveToFile = () => {
     exportToLocalFile(elements, viewTransform, canvasSettings, boardTitle);
-    setStorageStatus((prev) => ({ ...prev, isSavedToFile: true }));
+    const updatedStatus = saveSessionToStorage(elements, viewTransform, canvasSettings, boardTitle, true);
+    setStorageStatus(updatedStatus);
   };
 
   // Open Local File
   const handleOpenLocalFile = async (file: File) => {
     try {
       const session = await readLocalFile(file);
-      setElements(session.elements || []);
-      if (session.viewTransform) setViewTransform(session.viewTransform);
-      if (session.settings) setCanvasSettings(session.settings);
-      if (session.title) setBoardTitle(session.title);
+      const newElements = session.elements || [];
+      const newTransform = session.viewTransform || viewTransform;
+      const newSettings = session.settings || canvasSettings;
+      const newTitle = session.title || boardTitle;
 
-      setHistory([session.elements || []]);
+      setElements(newElements);
+      setViewTransform(newTransform);
+      setCanvasSettings(newSettings);
+      setBoardTitle(newTitle);
+
+      setHistory([newElements]);
       setHistoryIndex(0);
       setSelectedIds([]);
 
-      saveSessionToStorage(
-        session.elements,
-        session.viewTransform || viewTransform,
-        session.settings || canvasSettings,
-        session.title || boardTitle,
+      const updatedStatus = saveSessionToStorage(
+        newElements,
+        newTransform,
+        newSettings,
+        newTitle,
         true
       );
+      setStorageStatus(updatedStatus);
     } catch (err) {
       console.error('Failed to open whiteboard file:', err);
       alert('Error opening file: Make sure it is a valid .whiteboard or .json file.');
@@ -542,6 +606,8 @@ export default function WhiteboardPage() {
     commitHistory([]);
     setSelectedIds([]);
     clearSessionFromStorage();
+    const newStatus = saveSessionToStorage([], viewTransform, canvasSettings, boardTitle, false);
+    setStorageStatus(newStatus);
     setShowClearConfirm(false);
   };
 

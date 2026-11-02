@@ -102,9 +102,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <LuClock size={11} className="text-zinc-400" />
-            <span>7d Session Active</span>
+            <span>{storageStatus.isSavedToFile ? 'Saved to file (Safe)' : '7d Session Active'}</span>
             <span className="text-zinc-500 text-[10px]">
-              ({storageStatus.remainingDays}d {storageStatus.remainingHours}h)
+              ({storageStatus.isSavedToFile ? 'Safe' : `${storageStatus.remainingDays}d ${storageStatus.remainingHours}h`})
             </span>
           </div>
         </div>

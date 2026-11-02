@@ -16,20 +16,30 @@ export function saveSessionToStorage(
   settings: CanvasSettings,
   title: string = 'Untitled Diagram',
   isSavedToFile: boolean = false
-): void {
-  if (typeof window === 'undefined') return;
+): StorageStatus {
+  if (typeof window === 'undefined') {
+    return {
+      hasSession: false,
+      isExpired: false,
+      remainingDays: 7,
+      remainingHours: 0,
+      lastActiveDate: null,
+      isSavedToFile: false,
+    };
+  }
 
   try {
     const existingRaw = localStorage.getItem(STORAGE_KEY);
     let createdAt = Date.now();
     let id = 'whiteboard_' + Math.random().toString(36).substring(2, 9);
+    let wasSavedToFile = isSavedToFile;
 
     if (existingRaw) {
       try {
         const existing = JSON.parse(existingRaw) as BoardSession;
         if (existing.createdAt) createdAt = existing.createdAt;
         if (existing.id) id = existing.id;
-        if (existing.isSavedToFile) isSavedToFile = isSavedToFile || existing.isSavedToFile;
+        if (existing.isSavedToFile) wasSavedToFile = wasSavedToFile || existing.isSavedToFile;
       } catch {
         // Fall back to new
       }
@@ -44,12 +54,29 @@ export function saveSessionToStorage(
       settings,
       createdAt,
       lastActive: Date.now(),
-      isSavedToFile,
+      isSavedToFile: wasSavedToFile,
     };
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+
+    return {
+      hasSession: true,
+      isExpired: false,
+      remainingDays: 7,
+      remainingHours: 0,
+      lastActiveDate: new Date(session.lastActive),
+      isSavedToFile: wasSavedToFile,
+    };
   } catch (error) {
     console.error('Failed to save whiteboard session to localStorage:', error);
+    return {
+      hasSession: false,
+      isExpired: false,
+      remainingDays: 7,
+      remainingHours: 0,
+      lastActiveDate: null,
+      isSavedToFile: false,
+    };
   }
 }
 
@@ -89,7 +116,15 @@ export function loadSessionFromStorage(): {
 
     const session = JSON.parse(raw) as BoardSession;
     const now = Date.now();
-    const elapsed = now - (session.lastActive || session.createdAt || now);
+
+    // Guard against NaN or corrupt lastActive
+    let lastActive = session.lastActive || session.createdAt || now;
+    if (typeof lastActive !== 'number' || isNaN(lastActive) || lastActive < 1000000000000) {
+      lastActive = now;
+      session.lastActive = now;
+    }
+
+    const elapsed = now - lastActive;
     const isExpired = elapsed > SEVEN_DAYS_MS && !session.isSavedToFile;
 
     const remainingMs = Math.max(0, SEVEN_DAYS_MS - elapsed);
@@ -106,10 +141,18 @@ export function loadSessionFromStorage(): {
           isExpired: true,
           remainingDays: 0,
           remainingHours: 0,
-          lastActiveDate: new Date(session.lastActive),
+          lastActiveDate: new Date(lastActive),
           isSavedToFile: false,
         },
       };
+    }
+
+    // Refresh lastActive on active load so user gets rolling 7 days retention
+    session.lastActive = now;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    } catch {
+      // ignore
     }
 
     // Ensure backwards compatibility with default settings if missing
@@ -124,7 +167,7 @@ export function loadSessionFromStorage(): {
         isExpired: false,
         remainingDays,
         remainingHours,
-        lastActiveDate: new Date(session.lastActive),
+        lastActiveDate: new Date(now),
         isSavedToFile: !!session.isSavedToFile,
       },
     };
